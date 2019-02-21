@@ -1,0 +1,10 @@
+<launch>
+
+    <arg name="robot_name"/>
+    <arg name="init_pose"/>
+    <arg name="model"/>
+
+    <node pkg="gazebo_ros" type="spawn_model" name="spawn_urdf"  args="$(arg init_pose) -urdf -model turtlebot3_$(arg model)_$(arg robot_name) -param /robot_description" />
+
+    <!-- Need to add state publisher -->
+</launch>
