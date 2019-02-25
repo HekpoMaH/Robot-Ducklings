@@ -4,6 +4,7 @@
          to set disable GUI for RoboMaker. See part0.launch.
     -->
     <arg name="use_gui" default="true"/>
+    <arg name="model" default="burger"/>
 
     <include file="$(find gazebo_ros)/launch/empty_world.launch">
         <arg name="world_name" value="$(find project)/ros/worlds/simple.world"/>
