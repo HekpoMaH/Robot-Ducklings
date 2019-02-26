@@ -2,33 +2,38 @@
     <arg name="model" default="burger" doc="model type [burger, waffle, waffle_pi]"/>
     <param name="robot_description" command="$(find xacro)/xacro --inorder $(find turtlebot3_description)/urdf/turtlebot3_$(arg model).urdf.xacro" />
 
-    <!-- BEGIN ROBOT 1-->
-    <group ns="robot1">
-        <param name="tf_prefix" value="robot1_tf"/>
+    <arg name="first_tb3"  default="tb3_0"/>
+    <arg name="second_tb3" default="tb3_1"/>
+    <arg name="third_tb3"  default="tb3_2"/>
+
+    <!-- BEGIN ROBOT 1 - THE LEADER-->
+    <group ns="$(arg first_tb3)">
+        <param name="tf_prefix" value="$(arg first_tb3)"/>
         <include file="$(find project)/ros/launch/one_robot.launch">
-            <arg name="init_pose" value="-x -1.0 -y -1.0 -z 0.0"/>
-            <arg name="robot_name" value="Robot1"/>
+            <arg name="init_pose" value="-x -0.4 -y -1.0 -z 0.0"/>
+            <arg name="robot_name" value="$(arg first_tb3)"/>
             <arg name="model" value="$(arg model)"/>
         </include>
     </group>
 
     <!-- BEGIN ROBOT 2-->
-    <group ns="robot2">
-        <param name="tf_prefix" value="robot2_tf"/>
+    <group ns="$(arg second_tb3)">
+        <param name="tf_prefix" value="$(arg second_tb3)"/>
         <include file="$(find project)/ros/launch/one_robot.launch">
             <arg name="init_pose" value="-x -0.7 -y -1.0 -z 0.0"/>
-            <arg name="robot_name" value="Robot2"/>
+            <arg name="robot_name" value="$(arg second_tb3)"/>
             <arg name="model" value="$(arg model)"/>
         </include>
     </group>
 
     <!-- BEGIN ROBOT 3-->
-    <group ns="robot3">
-        <param name="tf_prefix" value="robot3_tf"/>
+    <group ns="$(arg third_tb3)">
+        <param name="tf_prefix" value="$(arg third_tb3)"/>
         <include file="$(find project)/ros/launch/one_robot.launch">
-            <arg name="init_pose" value="-x -0.4 -y -1.0 -z 0.0"/>
-            <arg name="robot_name" value="Robot3"/>
+            <arg name="init_pose" value="-x -1.0 -y -1.0 -z 0.0"/>
+            <arg name="robot_name" value="$(arg third_tb3)"/>
             <arg name="model" value="$(arg model)"/>
         </include>
     </group>
+
 </launch>

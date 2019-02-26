@@ -8,21 +8,23 @@
   <arg name="set_map_frame"  default="map"/>
   <arg name="open_rviz" default="true"/>
 
+  <arg name="ns" default="robot3"/>
+
   <!-- TurtleBot3 -->
   <include file="$(find turtlebot3_bringup)/launch/includes/description.launch.xml">
     <arg name="model" value="$(arg model)" />
   </include>
-  <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher">
-    <param name="publish_frequency" type="double" value="50.0" />
-    <param name="tf_prefix" value=""/>
-  </node>
+  <!--<node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher">-->
+    <!--<param name="publish_frequency" type="double" value="50.0" />-->
+    <!--<param name="tf_prefix" value="robot3_tf"/>-->
+  <!--</node>-->
   <node pkg="tf" type="static_transform_publisher" name="map_broadcaster" args="0 0 0 0 0 0 map occupancy_grid 100" />
 
   <!-- SLAM: Gmapping -->
   <node pkg="gmapping" type="slam_gmapping" name="turtlebot3_slam_gmapping" output="screen">
-    <param name="base_frame" value="$(arg set_base_frame)"/>
-    <param name="odom_frame" value="$(arg set_odom_frame)"/>
-    <param name="map_frame"  value="$(arg set_map_frame)"/>
+    <param name="base_frame" value="$(arg ns)/$(arg set_base_frame)"/>
+    <param name="odom_frame" value="$(arg ns)/$(arg set_odom_frame)"/>
+    <param name="map_frame"  value="$(arg ns)/$(arg set_map_frame)"/>
     <param name="map_update_interval" value="2.0"/>
     <param name="maxUrange" value="3.0"/>
     <param name="sigma" value="0.05"/>
@@ -55,8 +57,12 @@
   </node>
 
   <!-- rviz -->
-  <group if="$(arg open_rviz)"> 
-    <node pkg="rviz" type="rviz" name="rviz" required="true"
-          args="-d $(find turtlebot3_slam)/rviz/turtlebot3_$(arg slam_methods).rviz"/>
-  </group>
+  <!--<group if="$(arg open_rviz)">-->
+    <!--<node pkg="rviz" type="rviz" name="rviz" required="true"-->
+          <!--args="-d $(find turtlebot3_slam)/rviz/turtlebot3_$(arg slam_methods).rviz"/>-->
+  <!--</group>-->
+  <!--<group if="$(arg open_rviz)">-->
+    <!--<node pkg="rviz" type="rviz" name="rviz" required="true"-->
+          <!--args="-d $(find turtlebot3_gazebo)/rviz/multi_turtlebot3_slam.rviz"/>-->
+  <!--</group>-->
 </launch>

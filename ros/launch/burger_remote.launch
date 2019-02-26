@@ -1,6 +1,6 @@
 <launch>
   <arg name="model" default="burger" doc="model type [burger, waffle, waffle_pi]"/>
-  <arg name="multi_robot_name" default=""/>
+  <arg name="multi_robot_name" default="robot3_tf"/>
 
   <include file="$(find turtlebot3_bringup)/launch/includes/description.launch.xml">
     <arg name="model" value="$(arg model)" />
