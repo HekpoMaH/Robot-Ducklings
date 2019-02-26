@@ -92,8 +92,8 @@ def rule_based(front, front_left, front_right, left, right):
 
 
 class SimpleLaser(object):
-  def __init__(self):
-    rospy.Subscriber('/scan', LaserScan, self.callback)
+  def __init__(self, robot_name):
+    rospy.Subscriber('/'+robot_name+'/scan', LaserScan, self.callback)
     self._angles = [0., np.pi / 4., -np.pi / 4., np.pi / 2., -np.pi / 2.]
     self._width = np.pi / 180. * 10.  # 10 degrees cone of view.
     self._measurements = [float('inf')] * len(self._angles)
@@ -134,7 +134,7 @@ class SimpleLaser(object):
 
 
 class GroundtruthPose(object):
-  def __init__(self, name='Robot1'):
+  def __init__(self, name='tb3_0'):
     rospy.Subscriber('/gazebo/model_states', ModelStates, self.callback)
     self._pose = np.array([np.nan, np.nan, np.nan], dtype=np.float32)
     self._name = name
@@ -168,8 +168,8 @@ def run(args):
 
   # Update control every 100 ms.
   rate_limiter = rospy.Rate(100)
-  publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=5)
-  laser = SimpleLaser()
+  publisher = rospy.Publisher('/tb3_0/cmd_vel', Twist, queue_size=5)
+  laser = SimpleLaser('tb3_0')
   # Keep track of groundtruth position for plotting purposes.
   groundtruth = GroundtruthPose()
   pose_history = []
@@ -190,6 +190,7 @@ def run(args):
     vel_msg.linear.x = u
     vel_msg.angular.z = w
     publisher.publish(vel_msg)
+    # print('velocity is', vel_msg)
 
     # Log groundtruth positions in /tmp/gazebo_exercise.txt
     pose_history.append(groundtruth.pose)
@@ -202,7 +203,7 @@ def run(args):
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Runs obstacle avoidance')
-  parser.add_argument('--mode', action='store', default='braitenberg', help='Method.', choices=['braitenberg', 'rule_based'])
+  parser.add_argument('--mode', action='store', default='rule_based', help='Method.', choices=['braitenberg', 'rule_based'])
   args, unknown = parser.parse_known_args()
   try:
     run(args)
