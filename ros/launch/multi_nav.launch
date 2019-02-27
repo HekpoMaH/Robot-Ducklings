@@ -1,0 +1,5 @@
+<launch>
+	<arg name="mode" />
+
+	<node pkg="project" type="test_controller.py" name="robot_controller" output="screen"></node>
+</launch>

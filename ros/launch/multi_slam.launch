@@ -4,7 +4,7 @@
     <arg name="first_tb3"  default="tb3_0"/>
     <arg name="second_tb3" default="tb3_1"/>
     <arg name="third_tb3"  default="tb3_2"/>
-    <arg name="open_rviz" default="true"/>
+    <arg name="open_rviz" default="false"/>
 
     <!--
     This allows the RobotModel in RViz to look like the TurtleBot3
@@ -17,7 +17,7 @@
     This is not necessary to launch gazebo/rviz properly but may be needed later. tbc...
     -->
     <!--<node pkg="tf" type="static_transform_publisher" name="map_broadcaster" args="0 0 0 0 0 0 $(arg first_tb3)/map $(arg first_tb3)/$(arg first_tb3)/map 100" />-->
-    <node pkg="tf" type="static_transform_publisher" name="map_broadcaster" args="0 0 0 0 0 0 $(arg first_tb3)/map occupancy_grid 100" />
+    <!--<node pkg="tf" type="static_transform_publisher" name="map_broadcaster" args="0 0 0 0 0 0 $(arg first_tb3)/map occupancy_grid 100" />-->
 
     <group ns="$(arg first_tb3)">
         <include file="$(find project)/ros/launch/one_robot_gmapping.launch">
@@ -36,6 +36,12 @@
             <arg name="ns" value="$(arg third_tb3)"/>
         </include>
     </group>
+
+
+    <!-- map merge -->
+    <include file="$(find project)/ros/launch/multi_map_merge.launch"/>
+
+    <node pkg="tf" type="static_transform_publisher" name="map_broadcaster" args="0 0 0 0 0 0 map occupancy_grid 100" />
 
     <!-- rviz -->
     <group if="$(arg open_rviz)">
