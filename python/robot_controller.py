@@ -29,13 +29,15 @@ from tf.transformations import euler_from_quaternion
 
 from sim import vector_length, get_alpha
 # that's just for prototyping
-from obstacle_avoidance import rule_based, braitenberg
+import obstacle_avoidance
 
 FREE = 0
 UNKNOWN = 1
 OCCUPIED = 2
 
 ROBOT_RADIUS = 0.105 / 2.
+
+ROSPY_RATE = 50
 
 X = 0
 Y = 1
@@ -191,8 +193,8 @@ class GoalPose(object):
   def position(self):
     return self._position
 
-zs_desired = {FOLLOWERS[0]: [0.3, np.math.pi],
-              FOLLOWERS[1]: [0.6, np.math.pi]}
+zs_desired = {FOLLOWERS[0]: [0.5, np.math.pi],
+              FOLLOWERS[1]: [1.0, np.math.pi]}
 def set_distance_and_bearing(robot_name, dist, bearing):
     """ Bearing is always within [0; 2pi], not [-pi;pi] """
     global zs_desired
@@ -209,7 +211,7 @@ def run():
 
     slam = SLAM()
 
-    rate_limiter = rospy.Rate(100)
+    rate_limiter = rospy.Rate(ROSPY_RATE)
 
     stop_msg = Twist()
     stop_msg.linear.x = 0.
@@ -231,7 +233,7 @@ def run():
     
 
 
-    d = 0.1
+    d = 0.05
     k = np.array([0.45, 0.24])
 
     cnt = 0
@@ -243,7 +245,7 @@ def run():
         
         print('measurments', leader_laser.measurements)
         # u, w = rule_based(*leader_laser.measurements)
-        u, w = braitenberg(*leader_laser.measurements)
+        u, w = obstacle_avoidance.braitenberg(*leader_laser.measurements)
         print('vels', u, w)
         vel_msg_l = Twist()
         vel_msg_l.linear.x = max(min(u, 0.2), -0.2)
@@ -256,8 +258,8 @@ def run():
           rate_limiter.sleep()
           continue
 
-        # max_speed = 0.4
-        # max_angular = 0.2
+        max_speed = 1.0
+        max_angular = 0.7
 
         if leader_pose[YAW] < 0.:
             leader_pose[YAW] += 2 * np.math.pi
@@ -291,8 +293,8 @@ def run():
             speed_robot = np.array([vel_msg_l.linear.x, vel_msg_l.angular.z])
             speed_follower = np.matmul(np.linalg.inv(G), (p-np.matmul(F, speed_robot)))
             print('\t', speed_follower)
-            # speed_follower[0] = max(min(speed_follower[0], max_speed), -max_speed)
-            # speed_follower[1] = max(min(speed_follower[1], max_angular), -max_angular)
+            speed_follower[0] = max(min(speed_follower[0], max_speed), -max_speed)
+            speed_follower[1] = max(min(speed_follower[1], max_angular), -max_angular)
 
 
             vel_msg = Twist()
