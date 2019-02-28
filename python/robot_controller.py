@@ -42,6 +42,8 @@ YAW = 2
 
 LEADER = 'tb3_0'
 FOLLOWERS = ['tb3_1', 'tb3_2']
+FOLLOWER_1 = 'tb3_1'
+FOLLOWER_2 = 'tb3_2'
 
 def feedback_linearized(pose, velocity, epsilon):
   u = 0.  # [m/s]
@@ -148,7 +150,15 @@ class GoalPose(object):
   def position(self):
     return self._position
 
+zs_desired = {FOLLOWERS[0]: [0.04, np.math.pi],
+              FOLLOWERS[1]: [0.06, np.math.pi]}
+def set_distance_and_bearing(robot_name, dist, bearing):
+    """ Bearing is always within [0; 2pi], not [-pi;pi] """
+    global zs_desired
+    zs_desired[robot_name] = [dist, bearing]
+
 def run():
+    global zs_desired
     rospy.init_node('robot_controller')
 
     l_publisher = rospy.Publisher('/' + LEADER + '/cmd_vel', Twist, queue_size=5)
@@ -179,11 +189,9 @@ def run():
       i += 1
     
 
-    zs_desired = [[0.4, np.math.pi],
-                  [0.6, np.math.pi]]
 
-    d = 0.15
-    k = np.array([1, 0.1])
+    d = 0.05
+    k = np.array([1, 0.9])
 
     cnt = 0
 
@@ -220,7 +228,7 @@ def run():
             F=np.array([[-np.cos(z[1]), 0],
                         [np.sin(z[1])/z[0], -1]])
         
-            p = k * (zs_desired[i]-z)
+            p = k * (zs_desired[follower]-z)
 
             speed_robot = np.array([vel_msg_l.linear.x, vel_msg_l.angular.z])
             speed_follower = np.matmul(np.linalg.inv(G), (p-np.matmul(F, speed_robot)))
@@ -230,7 +238,7 @@ def run():
             vel_msg = Twist()
             if cnt < 500:
                 vel_msg = stop_msg
-                cnt += 1
+                cnt += 500
             else:
                 vel_msg.linear.x = speed_follower[0]
                 vel_msg.angular.z = speed_follower[1]
