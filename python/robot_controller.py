@@ -255,6 +255,9 @@ def run():
           rate_limiter.sleep()
           continue
 
+        max_speed = np.abs(vel_msg_l.linear.x * 1.5)
+        max_angular = np.abs(vel_msg_l.angular.z * 1.5)
+
         print('leader_pose', leader_pose)
         print('leader_speed', vel_msg_l.linear.x, vel_msg_l.angular.z)
         for i, follower in enumerate(FOLLOWERS):
@@ -280,8 +283,10 @@ def run():
             speed_robot = np.array([vel_msg_l.linear.x, vel_msg_l.angular.z])
             speed_follower = np.matmul(np.linalg.inv(G), (p-np.matmul(F, speed_robot)))
             print('\t', speed_follower)
-            speed_follower[0] = min(speed_follower[0], 0.5)
-            
+            speed_follower[0] = max(min(speed_follower[0], max_speed), -max_speed)
+            speed_follower[1] = max(min(speed_follower[1], max_angular), -max_angular)
+
+
             vel_msg = Twist()
             if cnt < 500:
                 vel_msg = stop_msg
