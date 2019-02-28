@@ -29,7 +29,7 @@ from tf.transformations import euler_from_quaternion
 
 from sim import vector_length, get_alpha
 # that's just for prototyping
-from obstacle_avoidance import rule_based
+from obstacle_avoidance import rule_based, braitenberg
 
 FREE = 0
 UNKNOWN = 1
@@ -242,11 +242,12 @@ def run():
             continue
         
         print('measurments', leader_laser.measurements)
-        u, w = rule_based(*leader_laser.measurements)
+        # u, w = rule_based(*leader_laser.measurements)
+        u, w = braitenberg(*leader_laser.measurements)
         print('vels', u, w)
         vel_msg_l = Twist()
-        vel_msg_l.linear.x = u
-        vel_msg_l.angular.z = w
+        vel_msg_l.linear.x = max(min(u, 0.2), -0.2)
+        vel_msg_l.angular.z = max(min(w, 0.1), -0.1)
         l_publisher.publish(vel_msg_l)
         leader_pose = slam.get_pose(LEADER)
 
