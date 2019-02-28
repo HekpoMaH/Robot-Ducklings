@@ -67,6 +67,9 @@ class SLAM(object):
     r1_pose = self.get_pose(FOLLOWER_1)
     r2_pose = self.get_pose(FOLLOWER_2)
 
+    if r0_pose is None or r1_pose is None or r2_pose is None:
+      return
+
     print('leader')
     print('\t X: ', r0_pose[X])
     print('\t Y: ', r0_pose[Y])
