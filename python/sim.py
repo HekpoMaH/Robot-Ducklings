@@ -99,20 +99,28 @@ def main(args):
   plt.show()
   colors = colors_from('jet', len(args.dt))
 
-  z_desired = [0.4, np.math.pi]
+  zs_desired = [[0.4, np.math.pi*3/4],
+               [0.6, np.math.pi],
+               [0.4, np.math.pi*5/4]]
 
   # hardcoded? TODO
   d=0.05
-  k=np.array([1, 1])
+  k=np.array([1, 0.9])
   # Show all dt.
   for color, dt in zip(colors, args.dt):
     print('Using dt = {}'.format(dt))
 
     # Initial robot pose (x, y and theta).
     robot_pose = np.array([0., 0., 0.], dtype=np.float32)
-    follower_pose = np.array([1, -1, np.math.pi/2])
+    follower_poses = np.array([[1, -1, np.math.pi/2],
+                              [1, 1, 0],
+                              [-1, -1, -np.math.pi/2]])
+    follower_drawers = []
+    for i, t in enumerate(zip(follower_poses, colors_from('jet', len(follower_poses)+1)[1:])):
+        follower, c = t
+        follower_drawers.append(RobotDrawer(ax, follower, color=c, label='follower'+str(i)))
+
     robot_drawer = RobotDrawer(ax, robot_pose, color=color, label='dt = %.3f [s]' % dt)
-    follower_drawer = RobotDrawer(ax, follower_pose, color=colors_from('jet', 4)[3], label='madafaka')
     if args.animate:
       fig.canvas.draw()
       fig.canvas.flush_events()
@@ -120,36 +128,40 @@ def main(args):
     # Simulate for 10 seconds.
     last_time_drawn = 0.
     last_time_drawn_real = time.time()
+    # exit(0)
     for t in np.arange(0., 40., dt):
       speed_robot = [0.25, 0.01]
       if t>20:
           speed_robot=[0.15, -.25]
-      speed_follower = [0.25, -0.01]
-      z = np.array([0., 0.])
-
-      z[0] = vector_length(robot_pose[:-1]- follower_pose[:-1])
-      z[1] = get_alpha(np.array([np.cos(robot_pose[YAW]), np.sin(robot_pose[YAW])]),
-                       follower_pose[:-1]-robot_pose[:-1])
-
-
-      beta = robot_pose[YAW] - follower_pose[YAW]
-      gamma = beta +z[1]
-      G=np.array([[np.cos(gamma), d*np.sin(gamma)],
-                  [-np.sin(gamma)/z[0], d*np.cos(gamma)/z[0]]])
-      F=np.array([[-np.cos(z[1]), 0],
-                  [np.sin(z[1])/z[0], -1]])
       
-      p = k * (z_desired-z)
+      for i, follower_pose in enumerate(follower_poses):
+          z = np.array([0., 0.])
 
-      speed_follower = np.matmul(np.linalg.inv(G), (p-np.matmul(F, speed_robot)))
-      speed_follower[0]=min(speed_follower[0], 0.5)
+          z[0] = vector_length(robot_pose[:-1]- follower_pose[:-1])
+          z[1] = get_alpha(np.array([np.cos(robot_pose[YAW]), np.sin(robot_pose[YAW])]),
+                           follower_pose[:-1]-robot_pose[:-1])
 
+
+          beta = robot_pose[YAW] - follower_pose[YAW]
+          gamma = beta +z[1]
+          G=np.array([[np.cos(gamma), d*np.sin(gamma)],
+                      [-np.sin(gamma)/z[0], d*np.cos(gamma)/z[0]]])
+          F=np.array([[-np.cos(z[1]), 0],
+                      [np.sin(z[1])/z[0], -1]])
+      
+          p = k * (zs_desired[i]-z)
+
+          speed_follower = np.matmul(np.linalg.inv(G), (p-np.matmul(F, speed_robot)))
+          speed_follower[0]=min(speed_follower[0], 0.5)
+
+          follower_poses[i] = integration_method(follower_pose, t, dt, *speed_follower)
+          
+      
       robot_pose = integration_method(robot_pose, t, dt, *speed_robot)
-      follower_pose = integration_method(follower_pose, t, dt, *speed_follower)
-      
       plt.title('time = %.3f [s] with dt = %.3f [s]' % (t + dt, dt))
       robot_drawer.update(robot_pose)
-      follower_drawer.update(follower_pose)
+      for follower_pose, follower_drawer in zip(follower_poses, follower_drawers):
+          follower_drawer.update(follower_pose)
 
       # Do not draw too many frames.
       time_drawn = t
