@@ -45,7 +45,6 @@ def braitenberg(front, front_left, front_right, left, right):
 
   return u, omega 
 
-
 def rule_based(front, front_left, front_right, left, right):
   u = 0.  # [m/s]
   omega = 0.  # [rad/s] going counter-clockwise.
@@ -90,6 +89,58 @@ def rule_based(front, front_left, front_right, left, right):
   omega = phi[1] - phi[0]
 
   return u, omega
+
+# added my controller here for testing
+def rule_based2(front, front_left, front_right, left, right):
+  u = 0.  # [m/s]
+  w = 0.  # [rad/s] going counter-clockwise.
+
+  def scale(x):
+    return 1 - np.clip(x / 3.5, 0, 1)
+
+  # scale sensors
+  si_front = scale(front)
+  si_front_left = scale(front_left)
+  si_front_right = scale(front_right)
+  si_left = scale(left)
+  si_right = scale(right)
+
+  left = right = 0
+
+  if si_front > 0.9:
+
+    if si_left > si_right:
+      left = -8
+      right = -14
+    else:
+      left = -14
+      right = -8
+  elif si_front_left > 0.8 and si_front_right > 0.8:
+    left = 10
+    right = 10
+  elif si_front_left > 0.8:
+    left = 10
+    right = 9
+  elif si_front_right > 0.8:
+    left = 9
+    right = 10
+  elif si_left > 0.75:
+    left = 12
+    right = 10
+  elif si_right > 0.75:
+    left = 10
+    right = 12
+  else:
+    left = 12
+    right = 12
+
+  r = 0.04
+  d = 0.1
+
+  u = (r / 2) * (right + left)
+  w = (r / d) * (right - left)
+
+  return u, w
 
 
 class SimpleLaser(object):

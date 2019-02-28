@@ -68,6 +68,10 @@ class SLAM(object):
     r2_pose = self.get_pose(FOLLOWER_2)
 
     if r0_pose is None or r1_pose is None or r2_pose is None:
+      print("SOME POSES ARE NONE")
+      print()
+      print()
+      print()
       return
 
     print('leader')

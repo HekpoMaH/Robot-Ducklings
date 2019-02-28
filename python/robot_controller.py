@@ -15,6 +15,9 @@ import sys
 from geometry_msgs.msg import Twist
 # Occupancy grid.
 from nav_msgs.msg import OccupancyGrid
+# Laser scan message:
+# http://docs.ros.org/api/sensor_msgs/html/msg/LaserScan.html
+from sensor_msgs.msg import LaserScan
 # Position.
 from tf import TransformListener
 # Goal.
@@ -23,8 +26,6 @@ from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
 # For pose information.
 from tf.transformations import euler_from_quaternion
-
-from obstacle_avoidance import SimpleLaser
 
 from sim import vector_length, get_alpha
 # that's just for prototyping
@@ -56,6 +57,46 @@ def feedback_linearized(pose, velocity, epsilon):
 
   return u, w
 
+class SimpleLaser(object):
+  def __init__(self, robot_name):
+    rospy.Subscriber('/'+robot_name+'/scan', LaserScan, self.callback)
+    self._angles = [0., np.pi / 4., -np.pi / 4., np.pi / 2., -np.pi / 2.]
+    self._width = np.pi / 180. * 10.  # 10 degrees cone of view.
+    self._measurements = [float('inf')] * len(self._angles)
+    self._indices = None
+
+  def callback(self, msg):
+    # Helper for angles.
+    def _within(x, a, b):
+      pi2 = np.pi * 2.
+      x %= pi2
+      a %= pi2
+      b %= pi2
+      if a < b:
+        return a <= x and x <= b
+      return a <= x or x <= b;
+
+    # Compute indices the first time.
+    if self._indices is None:
+      self._indices = [[] for _ in range(len(self._angles))]
+      for i, d in enumerate(msg.ranges):
+        angle = msg.angle_min + i * msg.angle_increment
+        for j, center_angle in enumerate(self._angles):
+          if _within(angle, center_angle - self._width / 2., center_angle + self._width / 2.):
+            self._indices[j].append(i)
+
+    ranges = np.array(msg.ranges)
+    for i, idx in enumerate(self._indices):
+      # We do not take the minimum range of the cone but the 10-th percentile for robustness.
+      self._measurements[i] = np.percentile(ranges[idx], 10)
+
+  @property
+  def ready(self):
+    return not np.isnan(self._measurements[0])
+
+  @property
+  def measurements(self):
+    return self._measurements
 
 
 class SLAM(object):
@@ -71,8 +112,8 @@ class SLAM(object):
   def update(self):
     # Get pose w.r.t. map.
     r0_pose = self.get_pose(LEADER)
-    r1_pose = self.get_pose(FOLLOWER_1)
-    r2_pose = self.get_pose(FOLLOWER_2)
+    r1_pose = self.get_pose(FOLLOWERS[0])
+    r2_pose = self.get_pose(FOLLOWERS[1])
 
     print('leader')
     print('\t X: ', r0_pose[X])
@@ -200,6 +241,12 @@ def run():
         vel_msg_l.angular.z = w
         l_publisher.publish(vel_msg_l)
         leader_pose = slam.get_pose(LEADER)
+
+        # chance of this happening if map-merge has not converged yet (or maybe some other reason)
+        if leader_pose is None:
+          rate_limiter.sleep()
+          continue
+
         print('leader_pose', leader_pose)
         print('leader_speed', vel_msg_l.linear.x, vel_msg_l.angular.z)
         for i, follower in enumerate(FOLLOWERS):
@@ -230,10 +277,17 @@ def run():
             vel_msg = Twist()
             if cnt < 500:
                 vel_msg = stop_msg
-                cnt += 1
+                cnt += 500
             else:
                 vel_msg.linear.x = speed_follower[0]
                 vel_msg.angular.z = speed_follower[1]
+
+            vel_msg.linear.x = speed_follower[0]
+            vel_msg.angular.z = speed_follower[1]
+
+            print('\t, follower ' + str(i) + ' speed:',  vel_msg.linear.x, vel_msg.angular.z)
+            print()
+            print()
 
             f_publishers[i].publish(vel_msg)
             
