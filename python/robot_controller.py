@@ -231,7 +231,8 @@ def run():
     
 
 
-    d = 0.05
+    # separation distance
+    d = 0.4
     k = np.array([1, 0.9])
 
     cnt = 0
@@ -256,8 +257,8 @@ def run():
           rate_limiter.sleep()
           continue
 
-        max_speed = np.abs(vel_msg_l.linear.x * 1.5)
-        max_angular = np.abs(vel_msg_l.angular.z * 1.5)
+        max_speed = np.abs(vel_msg_l.linear.x * 4.5)
+        max_angular = np.abs(vel_msg_l.angular.z * 4.5)
 
         print('leader_pose', leader_pose)
         print('leader_speed', vel_msg_l.linear.x, vel_msg_l.angular.z)
