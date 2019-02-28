@@ -191,8 +191,8 @@ class GoalPose(object):
   def position(self):
     return self._position
 
-zs_desired = {FOLLOWERS[0]: [0.04, np.math.pi],
-              FOLLOWERS[1]: [0.06, np.math.pi]}
+zs_desired = {FOLLOWERS[0]: [0.3, np.math.pi],
+              FOLLOWERS[1]: [0.6, np.math.pi]}
 def set_distance_and_bearing(robot_name, dist, bearing):
     """ Bearing is always within [0; 2pi], not [-pi;pi] """
     global zs_desired
@@ -231,8 +231,8 @@ def run():
     
 
 
-    d = 0.05
-    k = np.array([1, 0.9])
+    d = 0.15
+    k = np.array([0.45, 0.24])
 
     cnt = 0
 
@@ -256,14 +256,20 @@ def run():
           rate_limiter.sleep()
           continue
 
-        max_speed = np.abs(vel_msg_l.linear.x * 1.5)
-        max_angular = np.abs(vel_msg_l.angular.z * 1.5)
+        max_speed = np.abs(vel_msg_l.linear.x * 11.5)
+        max_angular = np.abs(vel_msg_l.angular.z * 11.5)
 
+        if leader_pose[YAW] < 0.:
+            leader_pose[YAW] += 2 * np.math.pi
         print('leader_pose', leader_pose)
         print('leader_speed', vel_msg_l.linear.x, vel_msg_l.angular.z)
         for i, follower in enumerate(FOLLOWERS):
 
             follower_pose = slam.get_pose(follower)
+
+            if follower_pose[YAW] < 0.:
+                follower_pose[YAW] += 2*np.math.pi
+
             print('\t i, follower_pose:', i, follower_pose)
 
             z = np.array([0., 0.])
@@ -279,13 +285,14 @@ def run():
             F=np.array([[-np.cos(z[1]), 0],
                         [np.sin(z[1])/z[0], -1]])
         
+            print('\t zs', z, ' <-> ', zs_desired[follower])
             p = k * (zs_desired[follower]-z)
 
             speed_robot = np.array([vel_msg_l.linear.x, vel_msg_l.angular.z])
             speed_follower = np.matmul(np.linalg.inv(G), (p-np.matmul(F, speed_robot)))
             print('\t', speed_follower)
-            speed_follower[0] = max(min(speed_follower[0], max_speed), -max_speed)
-            speed_follower[1] = max(min(speed_follower[1], max_angular), -max_angular)
+            # speed_follower[0] = max(min(speed_follower[0], max_speed), -max_speed)
+            # speed_follower[1] = max(min(speed_follower[1], max_angular), -max_angular)
 
 
             vel_msg = Twist()
