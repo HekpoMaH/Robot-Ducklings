@@ -68,7 +68,7 @@ def rule_based(front, front_left, front_right, left, right):
     # is it TOO close on the front
     if I[2] < -1.7:
       phi = [-0.3, -0.3] # reverse
-      phi[1] += np.random.uniform(low=-0.5, high=0.3, size=1) # and a bit more (or less) on one side
+      phi[1] += np.random.uniform(low=-0.5, high=0.3, size=1)[0] # and a bit more (or less) on one side
       # so we could turm (NB. Sampling interval is [-0.5, 0.3) -> we will always reverse)
 
     # nothing on the left
@@ -83,8 +83,9 @@ def rule_based(front, front_left, front_right, left, right):
     else:
       # proceeding as in the first case
       phi = [-0.3, -0.3]
-      phi[1] += np.random.uniform(low=-0.5, high=0.3, size=1)
+      phi[1] += np.random.uniform(low=-0.5, high=0.3, size=1)[0]
 
+  print('phi=', phi)
   u = (phi[1] + phi[0]) / 2.
   omega = phi[1] - phi[0]
 

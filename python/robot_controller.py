@@ -4,24 +4,31 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import argparse
 import numpy as np
+import os
 import rospy
+import sys
 
 # Robot motion commands:
 # http://docs.ros.org/api/geometry_msgs/html/msg/Twist.html
 from geometry_msgs.msg import Twist
-# Laser scan message:
-# http://docs.ros.org/api/sensor_msgs/html/msg/LaserScan.html
-from sensor_msgs.msg import LaserScan
-from sensor_msgs.msg import JointState
-# For groundtruth information.
-from gazebo_msgs.msg import ModelStates
-from tf.transformations import euler_from_quaternion
+# Occupancy grid.
+from nav_msgs.msg import OccupancyGrid
+# Position.
 from tf import TransformListener
-from obstacle_avoidance import SimpleLaser
+# Goal.
 from geometry_msgs.msg import PoseStamped
-import scipy.signal
-import matplotlib.pylab as plt
+# Path.
+from nav_msgs.msg import Path
+# For pose information.
+from tf.transformations import euler_from_quaternion
+
+from obstacle_avoidance import SimpleLaser
+
+from sim import vector_length, get_alpha
+# that's just for prototyping
+from obstacle_avoidance import rule_based
 
 FREE = 0
 UNKNOWN = 1
@@ -33,72 +40,24 @@ X = 0
 Y = 1
 YAW = 2
 
-class OccupancyGrid(object):
-  def __init__(self, values, origin, resolution):
-    self._original_values = values.copy()
-    self._values = values.copy()
-    # Inflate obstacles (using a convolution).
-    inflated_grid = np.zeros_like(values)
-    inflated_grid[values == OCCUPIED] = 1.
-    w = 2 * int(ROBOT_RADIUS / resolution) + 1
-    inflated_grid = scipy.signal.convolve2d(inflated_grid, np.ones((w, w)), mode='same')
-    self._values[inflated_grid > 0.] = OCCUPIED
-    self._origin = np.array(origin[:2], dtype=np.float32)
-    self._origin -= resolution / 2.
-    assert origin[YAW] == 0.
-    self._resolution = resolution
+LEADER = 'tb3_0'
+FOLLOWERS = ['tb3_1', 'tb3_2']
 
-  @property
-  def values(self):
-    return self._values
+def feedback_linearized(pose, velocity, epsilon):
+  u = 0.  # [m/s]
+  w = 0.  # [rad/s] going counter-clockwise.
 
-  @property
-  def resolution(self):
-    return self._resolution
+  # MISSING: Implement feedback-linearization to follow the velocity
+  # vector given as argument. Epsilon corresponds to the distance of
+  # linearized point in front of the robot.
 
-  @property
-  def origin(self):
-    return self._origin
+  u = velocity[X] * np.cos(pose[YAW]) + velocity[Y] * np.sin(pose[YAW])
+  w = (1 / epsilon) * (-velocity[X] * np.sin(pose[YAW]) + velocity[Y] * np.cos(pose[YAW]))
 
-  def draw(self):
-    plt.imshow(self._original_values.T, interpolation='none', origin='lower',
-               extent=[self._origin[X],
-                       self._origin[X] + self._values.shape[0] * self._resolution,
-                       self._origin[Y],
-                       self._origin[Y] + self._values.shape[1] * self._resolution])
-    plt.set_cmap('gray_r')
-
-  def get_index(self, position):
-    idx = ((position - self._origin) / self._resolution).astype(np.int32)
-    if len(idx.shape) == 2:
-      idx[:, 0] = np.clip(idx[:, 0], 0, self._values.shape[0] - 1)
-      idx[:, 1] = np.clip(idx[:, 1], 0, self._values.shape[1] - 1)
-      return (idx[:, 0], idx[:, 1])
-    idx[0] = np.clip(idx[0], 0, self._values.shape[0] - 1)
-    idx[1] = np.clip(idx[1], 0, self._values.shape[1] - 1)
-    print('idx=', idx)
-    return tuple(idx)
-
-  def get_position(self, i, j):
-    return np.array([i, j], dtype=np.float32) * self._resolution + self._origin
-
-  def is_occupied(self, position):
-    return self._values[self.get_index(position)] == OCCUPIED
-
-  def is_free(self, position):
-    return self._values[self.get_index(position)] == FREE
+  return u, w
 
 
-class LeaderPos(object):
-    # TODO I Imagine getting the state/position/speed/whatever
-    # through a class like this one
-    # Leader name is so you could share same class for each robot
-    # You 'might' be able to use different callback fns in the same class
-    def __init__(self, leader_name):
-        rospy.Subscriber('/'+leader_name+'/joint_states', JointState, self.callback)
-    def callback(self, msg):
-        print(msg)
-        
+
 class SLAM(object):
   def __init__(self):
     rospy.Subscriber('/map', OccupancyGrid, self.callback)
@@ -107,32 +66,55 @@ class SLAM(object):
     self._pose = np.array([np.nan, np.nan, np.nan], dtype=np.float32)
     
   def callback(self, msg):
-    values = np.array(msg.data, dtype=np.int8).reshape((msg.info.width, msg.info.height))
-    processed = np.empty_like(values)
-    processed[:] = FREE
-    processed[values < 0] = UNKNOWN
-    processed[values > 50] = OCCUPIED
-    processed = processed.T
-    origin = [msg.info.origin.position.x, msg.info.origin.position.y, 0.]
-    resolution = msg.info.resolution
-    self._occupancy_grid = OccupancyGrid(processed, origin, resolution)
+    pass
 
   def update(self):
     # Get pose w.r.t. map.
+    r0_pose = self.get_pose(LEADER)
+    r1_pose = self.get_pose(FOLLOWER_1)
+    r2_pose = self.get_pose(FOLLOWER_2)
+
+    print('leader')
+    print('\t X: ', r0_pose[X])
+    print('\t Y: ', r0_pose[Y])
+    print('\t YAW: ', r0_pose[YAW])
+
+    print()
+
+    print('follower 1')
+    print('\t X: ', r1_pose[X])
+    print('\t Y: ', r1_pose[Y])
+    print('\t YAW: ', r1_pose[YAW])
+
+    print()
+
+    print('follower 2')
+    print('\t X: ', r2_pose[X])
+    print('\t Y: ', r2_pose[Y])
+    print('\t YAW: ', r2_pose[YAW])
+
+    print()
+    print()
+    print()
+
+  def get_pose(self, robot):
     a = 'occupancy_grid'
-    b = 'base_link'
+    b = robot + '/base_link'
     if self._tf.frameExists(a) and self._tf.frameExists(b):
       try:
         t = rospy.Time(0)
         position, orientation = self._tf.lookupTransform('/' + a, '/' + b, t)
-        self._pose[X] = position[X]
-        self._pose[Y] = position[Y]
-        _, _, self._pose[YAW] = euler_from_quaternion(orientation)
+        pose = np.zeros(3, dtype=np.float32)
+        pose[X] = position[X]
+        pose[Y] = position[Y]
+        _, _, pose[YAW] = euler_from_quaternion(orientation)
+        return pose
+
       except Exception as e:
         print(e)
     else:
       print('Unable to find:', self._tf.frameExists(a), self._tf.frameExists(b))
-    pass
+
 
   @property
   def ready(self):
@@ -167,15 +149,97 @@ class GoalPose(object):
     return self._position
 
 def run():
-    rospy.init_node('follower_1_controller')
-    publisher = rospy.Publisher('/tb3_1/cmd_vel', Twist, queue_size=5)
-    leader = LeaderPos('tb3_0')
-    laser = SimpleLaser('tb3_1')
+    rospy.init_node('robot_controller')
+
+    l_publisher = rospy.Publisher('/' + LEADER + '/cmd_vel', Twist, queue_size=5)
+    f_publishers = [None] * len(FOLLOWERS)
+    for i, follower in enumerate(FOLLOWERS):
+        f_publishers[i] = rospy.Publisher('/' + follower + '/cmd_vel', Twist, queue_size=5)
+
+    slam = SLAM()
+
     rate_limiter = rospy.Rate(100)
 
+    stop_msg = Twist()
+    stop_msg.linear.x = 0.
+    stop_msg.angular.z = 0.
+
+    leader_laser = SimpleLaser(LEADER)
+
+    previous_time = rospy.Time.now().to_sec()
+
+    # Make sure the robot is stopped.
+    i = 0
+    while i < 10 and not rospy.is_shutdown():
+      l_publisher.publish(stop_msg)
+      for f_publisher in f_publishers:
+          f_publisher.publish(stop_msg)
+
+      rate_limiter.sleep()
+      i += 1
+    
+
+    zs_desired = [[0.4, np.math.pi],
+                  [0.6, np.math.pi]]
+
+    d = 0.15
+    k = np.array([1, 0.1])
+
+    cnt = 0
+
     while not rospy.is_shutdown():
-        if not laser.ready:
+        if not leader_laser.ready:
             rate_limiter.sleep()
             continue
+        
+        print('measurments', leader_laser.measurements)
+        u, w = rule_based(*leader_laser.measurements)
+        print('vels', u, w)
+        vel_msg_l = Twist()
+        vel_msg_l.linear.x = u
+        vel_msg_l.angular.z = w
+        l_publisher.publish(vel_msg_l)
+        leader_pose = slam.get_pose(LEADER)
+        print('leader_pose', leader_pose)
+        print('leader_speed', vel_msg_l.linear.x, vel_msg_l.angular.z)
+        for i, follower in enumerate(FOLLOWERS):
+
+            follower_pose = slam.get_pose(follower)
+            print('\t i, follower_pose:', i, follower_pose)
+
+            z = np.array([0., 0.])
+            z[0] = vector_length(leader_pose[:-1] - follower_pose[:-1])
+            z[1] = get_alpha(np.array([np.cos(leader_pose[YAW]), np.sin(leader_pose[YAW])]),
+                             follower_pose[:-1] - leader_pose[:-1])
+
+            beta = leader_pose[YAW] - follower_pose[YAW]
+            gamma = beta + z[1]
+
+            G=np.array([[np.cos(gamma), d*np.sin(gamma)],
+                        [-np.sin(gamma)/z[0], d*np.cos(gamma)/z[0]]])
+            F=np.array([[-np.cos(z[1]), 0],
+                        [np.sin(z[1])/z[0], -1]])
+        
+            p = k * (zs_desired[i]-z)
+
+            speed_robot = np.array([vel_msg_l.linear.x, vel_msg_l.angular.z])
+            speed_follower = np.matmul(np.linalg.inv(G), (p-np.matmul(F, speed_robot)))
+            print('\t', speed_follower)
+            speed_follower[0] = min(speed_follower[0], 0.5)
+            
+            vel_msg = Twist()
+            if cnt < 500:
+                vel_msg = stop_msg
+                cnt += 1
+            else:
+                vel_msg.linear.x = speed_follower[0]
+                vel_msg.angular.z = speed_follower[1]
+
+            f_publishers[i].publish(vel_msg)
+            
+
+
+        rate_limiter.sleep()
+
 if __name__ == '__main__':
     run()
