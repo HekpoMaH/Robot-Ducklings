@@ -195,10 +195,10 @@ class GoalPose(object):
     return self._position
 
 zs_desired = {FOLLOWERS[0]: [0.4, 3.*np.math.pi/4.],
-              FOLLOWERS[1]: [0.3, 5.*np.math.pi/4.]}
+              FOLLOWERS[1]: [0.4, 5.*np.math.pi/4.]}
 
-z_obstacle_desired = {FOLLOWERS[0]: [0.5, 0.15],
-                      FOLLOWERS[1]: [0.5, 0.15]}
+z_obstacle_desired = {FOLLOWERS[0]: [0.8, 0.30],
+                      FOLLOWERS[1]: [1.8, 0.30]}
 
 def set_distance_and_bearing(robot_name, dist, bearing):
     """ Bearing is always within [0; 2pi], not [-pi;pi] """
@@ -272,8 +272,8 @@ def find_nearest(angles, angle_to_robot):
 
 d = 0.05
 k = np.array([0.45, 0.04])
-max_speed = 0.4
-max_angular = 0.3
+max_speed = 0.28
+max_angular = 0.28
 
 def set_vel_no_obstacle(follower, follower_pose, leader_pose, speed_leader):
     global zs_desired, d, k, max_speed, max_angular
@@ -297,6 +297,7 @@ def set_vel_no_obstacle(follower, follower_pose, leader_pose, speed_leader):
 
     # speed_robot = np.array([vel_msg_l.linear.x, vel_msg_l.angular.z])
     speed_follower = np.matmul(np.linalg.inv(G), (p-np.matmul(F, speed_leader)))
+    print('\t skorosta1', speed_follower)
     speed_follower[0] = max(min(speed_follower[0], max_speed), -max_speed)
     speed_follower[1] = max(min(speed_follower[1], max_angular), -max_angular)
 
@@ -304,7 +305,7 @@ def set_vel_no_obstacle(follower, follower_pose, leader_pose, speed_leader):
 
 def set_vel_with_obstacle(follower, follower_pose, leader_pose, speed_leader, virtual_pose, delta):
     global zs_desired, d, max_speed, max_angular
-    k = [0.05, 10]
+    k = [0.045, 0.4]
 
     z = np.array([0., 0.])
     z[0] = vector_length(leader_pose[:-1] - follower_pose[:-1])
@@ -316,7 +317,7 @@ def set_vel_with_obstacle(follower, follower_pose, leader_pose, speed_leader, vi
     bearing = get_alpha(np.array([np.cos(leader_pose[YAW]), np.sin(leader_pose[YAW])]),
                         follower_pose[:-1] - leader_pose[:-1])
     gamma = beta + bearing
-    gamma_obstacle = virtual_pose[YAW] - follower_pose[YAW]
+    gamma_obstacle = np.clip(virtual_pose[YAW] - follower_pose[YAW], -np.math.pi, np.math.pi)
     print('\t go', gamma_obstacle, virtual_pose[YAW], follower_pose[YAW])
     print('\t zs vs desired:', z, z_obstacle_desired[follower])
 
@@ -327,9 +328,13 @@ def set_vel_with_obstacle(follower, follower_pose, leader_pose, speed_leader, vi
     p = k * (z_obstacle_desired[follower]-z)
 
     # speed_robot = np.array([vel_msg_l.linear.x, vel_msg_l.angular.z])
+
+    print('\t matricata', (G))
+    print('\t matricata', np.linalg.inv(G), p-F, p, F)
     speed_follower = np.matmul(np.linalg.inv(G), p-F)
+    print('\t skorosta', speed_follower)
     speed_follower[0] = max(min(speed_follower[0], max_speed), -max_speed)
-    speed_follower[1] = max(min(speed_follower[1], max_angular), -max_angular)
+    speed_follower[1] = max(min(0.08*speed_follower[1], max_angular), -max_angular)
 
     return speed_follower
 
@@ -352,8 +357,8 @@ def run():
 
     leader_laser = SimpleLaser(LEADER)
     #                                -np.math.pi = np.math.pi and I don't want that
-    angles = np.linspace(0, 2*np.math.pi - EPSILON, 240)
-    f_lasers = [SimpleLaser(FOLLOWERS[0], angles, cone_view=1), SimpleLaser(FOLLOWERS[1], angles, cone_view=1)]
+    angles = np.linspace(-np.math.pi, np.math.pi - EPSILON, 360)
+    f_lasers = [SimpleLaser(FOLLOWERS[0], angles, cone_view=5), SimpleLaser(FOLLOWERS[1], angles, cone_view=5)]
 
     previous_time = rospy.Time.now().to_sec()
 
