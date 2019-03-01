@@ -1,0 +1,4 @@
+<launch>
+
+	<node pkg="project" type="three_robot_controller.py" name="three_robot_controller" output="screen"></node>
+</launch>
