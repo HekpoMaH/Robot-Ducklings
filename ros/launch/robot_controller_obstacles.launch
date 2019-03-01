@@ -1,0 +1,4 @@
+<launch>
+
+	<node pkg="project" type="robot_controller_obstacles.py" name="robot_controller_obstacles" output="screen"></node>
+</launch>
