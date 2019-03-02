@@ -198,7 +198,7 @@ zs_desired = {FOLLOWERS[0]: [0.4, 3.*np.math.pi/4.],
               FOLLOWERS[1]: [0.4, 5.*np.math.pi/4.]}
 
 z_obstacle_desired = {FOLLOWERS[0]: [0.8, 0.30],
-                      FOLLOWERS[1]: [1.8, 0.30]}
+                      FOLLOWERS[1]: [0.8, 0.30]}
 
 def set_distance_and_bearing(robot_name, dist, bearing):
     """ Bearing is always within [0; 2pi], not [-pi;pi] """
@@ -251,8 +251,8 @@ def find_virtual_robot(robot_pose, leader_pose, angles, measurements, min_idx):
     print('\t \t t2 dir', t2_dir)
 
     
-    print('\t \t dot_prods', dot_prod(t1_dir, leader_dir), dot_prod(t2_dir, leader_dir))
-    if dot_prod(t1_dir, leader_dir) >= dot_prod(t2_dir, leader_dir):
+    print('\t \t dot_prods', dot_prod(t1_dir, leader_pose[:-1]-robot_pose[:-1]), dot_prod(t2_dir, leader_pose[:-1]-robot_pose[:-1]))
+    if dot_prod(t1_dir, leader_pose[:-1]-robot_pose[:-1]) >= dot_prod(t2_dir, leader_pose[:-1]-robot_pose[:-1]):
         tangent_dir = t1_dir
     else:
         tangent_dir = t2_dir
