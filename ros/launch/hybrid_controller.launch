@@ -1,0 +1,5 @@
+<launch>
+	<arg name="mode" />
+
+	<node pkg="project" type="hybrid_controller.py" name="hybrid_controller" output="screen"></node>
+</launch>
