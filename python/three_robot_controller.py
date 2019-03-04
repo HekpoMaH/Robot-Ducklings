@@ -237,11 +237,9 @@ def run():
 
       rate_limiter.sleep()
       i += 1
-    
-
 
     d = 0.05
-    k = np.array([0.45, 0.24, 0.45, 0.24])
+    k = np.array([0.45, 0.24, 0.45, 0.45])
 
     cnt = 0
 
@@ -321,10 +319,10 @@ def run():
         speed_robot = np.array([vel_msg_l.linear.x, vel_msg_l.angular.z])
         speed_follower = np.matmul(np.linalg.inv(G), (p-np.matmul(F, speed_robot)))
         print('\t', speed_follower)
-        speed_follower[0] = max(min(speed_follower[0], max_speed), -max_speed)
-        speed_follower[1] = max(min(speed_follower[1], max_angular), -max_angular)
-        speed_follower[2] = max(min(speed_follower[2], max_speed), -max_speed)
-        speed_follower[3] = max(min(speed_follower[3], max_angular), -max_angular)
+        speed_follower[0] = max(0.5*min(speed_follower[0], max_speed), -max_speed)
+        speed_follower[1] = max(0.4*min(speed_follower[1], max_angular), -max_angular)
+        speed_follower[2] = max(0.5*min(speed_follower[2], max_speed), -max_speed)
+        speed_follower[3] = max(0.4*min(speed_follower[3], max_angular), -max_angular)
 
 
         vel_msg = Twist()

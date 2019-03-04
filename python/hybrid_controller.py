@@ -327,8 +327,13 @@ class GoalPose(object):
 # zs_desired = {FOLLOWERS[0]: [0.5, np.math.pi],
 #               FOLLOWERS[1]: [1.0, np.math.pi]}
 
-zs_desired = {FOLLOWERS[0]: [0.3, 3.*np.math.pi/4.],
-              FOLLOWERS[1]: [0.3, 5.*np.math.pi/4.]}
+zs_desired = {FOLLOWERS[0]: [0.6, 3.*np.math.pi/4.],
+              FOLLOWERS[1]: [0.6, 5.*np.math.pi/4.]}
+# right triangle, two sides 0.4
+#                  l12,  psi12          , l13,   l23
+zs_both_desired = [0.4, 5.*np.math.pi/4., 0.4, np.sqrt(0.32)]
+#              psi13,            psi23
+extra_psis =  [3.*np.math.pi/4., np.math.pi/2.]
 
 
 def set_distance_and_bearing(robot_name, dist, bearing):
@@ -382,9 +387,10 @@ def run():
     rate_limiter.sleep()
     i += 1
 
+  max_speed = 0.6
+  max_angular = 0.6
+  k = np.array([0.45, 0.24, 0.45, 0.45])
   d = 0.05
-  k = np.array([0.45, 0.24])
-
   cnt = 0
 
   while not rospy.is_shutdown():
@@ -392,15 +398,13 @@ def run():
       rate_limiter.sleep()
       continue
 
-    max_speed = 0.2
-    max_angular = 0.2
-
-    print('measurements', leader_laser.measurements)
+    print('measurments', leader_laser.measurements)
+    # u, w = rule_based(*leader_laser.measurements)
     u, w = obstacle_avoidance.braitenberg(*leader_laser.measurements)
     print('vels', u, w)
     vel_msg_l = Twist()
-    vel_msg_l.linear.x = max(min(u, max_speed * 0.5), -max_speed * 0.5)
-    vel_msg_l.angular.z = max(min(w, max_angular * 0.5), -max_angular * 0.5)
+    vel_msg_l.linear.x = max(min(u, max_speed * 0.25), -max_speed * 0.25)
+    vel_msg_l.angular.z = max(min(w, max_speed * 0.25), -max_speed * 0.25)
     l_publisher.publish(vel_msg_l)
     leader_pose = slam.get_pose(LEADER)
 
@@ -413,9 +417,11 @@ def run():
       leader_pose[YAW] += 2 * np.math.pi
     print('leader_pose', leader_pose)
     print('leader_speed', vel_msg_l.linear.x, vel_msg_l.angular.z)
+
+    corrected_leader_pose = leader_pose
+
     for i, follower in enumerate(FOLLOWERS):
 
-      corrected_leader_pose = leader_pose
       follower_pose = slam.get_pose(follower)
 
       print()
@@ -431,9 +437,10 @@ def run():
         rel_robot_position = rel_robot_pos[:-1]
         global_leader_rel_follower_pos = get_relative_position(follower_pose, leader_pose[:-1])
 
-        dp = np.dot(rel_robot_position, global_leader_rel_follower_pos)
-        denom = ((np.linalg.norm(rel_robot_position) * np.linalg.norm(global_leader_rel_follower_pos)))
-        ang_diff = np.arccos(dp / denom)
+        dotprod = np.dot(rel_robot_position, global_leader_rel_follower_pos)
+        denom = (np.linalg.norm(rel_robot_position) * np.linalg.norm(global_leader_rel_follower_pos))
+        ang_diff = np.arccos(dotprod / denom)
+        dist_diff = np.linalg.norm(rel_robot_position - global_leader_rel_follower_pos)
 
         print("\t GLOBAL FOLLOWER POSE: ", follower_pose)
         print("\t REL LEADER POSITION: ", rel_robot_position)
@@ -441,55 +448,193 @@ def run():
         print("\t EUC DIST BETWEEN MAP-MERGE AND LASER follower<->leader", np.linalg.norm(rel_robot_position - global_leader_rel_follower_pos))
         print("\t ANG BETWEEN MAP-MERGE AND LASER follower<->leader", ang_diff)
 
+        # and dist_diff < 0.6
         if np.abs(ang_diff) < 0.3 and np.abs(ang_diff) < best_ang_diff:
           corrected_leader_pose[:-1] = rel_robot_position + follower_pose[:-1]
       print()
 
-      if follower_pose[YAW] < 0.:
-        follower_pose[YAW] += 2 * np.math.pi
+    # unfortunately the eqns and theorem for 3 robots (1 follower)
+    # n robots' rules have to be handcrafted
 
-      print('\t i, follower_pose:', i, follower_pose)
+    # there are also some other fancy complex methods in the paper,
+    # but haven't investigated yet
+    f1_pose = slam.get_pose(FOLLOWERS[0])
+    f2_pose = slam.get_pose(FOLLOWERS[1])
 
-      z = np.array([0., 0.])
-      z[0] = vector_length(corrected_leader_pose[:-1] - follower_pose[:-1])
-      z[1] = get_alpha(np.array([np.cos(corrected_leader_pose[YAW]), np.sin(corrected_leader_pose[YAW])]),
-                       follower_pose[:-1] - corrected_leader_pose[:-1])
+    if f1_pose[YAW] < 0.:
+      f1_pose[YAW] += 2 * np.math.pi
 
-      beta = corrected_leader_pose[YAW] - follower_pose[YAW]
-      gamma = beta + z[1]
+    if f2_pose[YAW] < 0.:
+      f2_pose[YAW] += 2 * np.math.pi
 
-      G = np.array([[np.cos(gamma), d * np.sin(gamma)],
-                    [-np.sin(gamma) / z[0], d * np.cos(gamma) / z[0]]])
-      F = np.array([[-np.cos(z[1]), 0],
-                    [np.sin(z[1]) / z[0], -1]])
+    print('\t follower1_pose:', f1_pose)
+    print('\t follower2_pose:', f2_pose)
 
-      print('\t zs', z, ' <-> ', zs_desired[follower])
-      p = k * (zs_desired[follower] - z)
+    z = np.array([0., 0., 0., 0.])
+    z[0] = vector_length(corrected_leader_pose[:-1] - f1_pose[:-1])
+    z[1] = get_alpha(np.array([np.cos(corrected_leader_pose[YAW]), np.sin(corrected_leader_pose[YAW])]),
+                     f1_pose[:-1] - corrected_leader_pose[:-1])
+    z[2] = vector_length(corrected_leader_pose[:-1] - f2_pose[:-1])
+    z[3] = vector_length(f1_pose[:-1] - f2_pose[:-1])
 
-      speed_robot = np.array([vel_msg_l.linear.x, vel_msg_l.angular.z])
-      speed_follower = np.matmul(np.linalg.inv(G), (p - np.matmul(F, speed_robot)))
-      print('\t', speed_follower)
-      speed_follower[0] = max(min(speed_follower[0], max_speed), -max_speed)
-      speed_follower[1] = max(min(speed_follower[1], max_angular), -max_angular)
+    #         g12
+    gammas = [corrected_leader_pose[YAW] - f1_pose[YAW] + z[1]]
+    #             g13
+    gammas.append(corrected_leader_pose[YAW] - f2_pose[YAW] + extra_psis[0])
+    #             g23
+    gammas.append(f1_pose[YAW] - f2_pose[YAW] + extra_psis[1])
+    # beta =
+    # gamma = beta + z[1]
 
-      vel_msg = Twist()
-      if cnt < 500:
-        vel_msg = stop_msg
-        cnt += 500
-      else:
-        vel_msg.linear.x = speed_follower[0]
-        vel_msg.angular.z = speed_follower[1]
+    G = np.array([[np.cos(gammas[0]), d * np.sin(gammas[0]), 0, 0],
+                  [-np.sin(gammas[0]) / z[0], d * np.cos(gammas[0]) / z[0], 0, 0],
+                  [0, 0, np.cos(gammas[1]), d * np.sin(gammas[1])],
+                  [0, 0, np.cos(gammas[2]), d * np.sin(gammas[2])]])
+    F = np.array([[-np.cos(z[1]), 0],
+                  [np.sin(z[1]) / z[0], -1],
+                  [-np.cos(extra_psis[0]), 0],
+                  [0, 0]])
 
-      vel_msg.linear.x = speed_follower[0]
-      vel_msg.angular.z = speed_follower[1]
+    print('\t zs', z, ' <-> ', zs_both_desired)
+    p = k * (zs_both_desired - z)
 
-      print('\t, follower ' + str(i) + ' speed:', vel_msg.linear.x, vel_msg.angular.z)
-      print()
-      print()
+    speed_robot = np.array([vel_msg_l.linear.x, vel_msg_l.angular.z])
+    speed_follower = np.matmul(np.linalg.inv(G), (p - np.matmul(F, speed_robot)))
+    print('\t', speed_follower)
+    speed_follower[0] = max(0.5 * min(speed_follower[0], max_speed), -max_speed)
+    speed_follower[1] = max(0.4 * min(speed_follower[1], max_angular), -max_angular)
+    speed_follower[2] = max(0.5 * min(speed_follower[2], max_speed), -max_speed)
+    speed_follower[3] = max(0.4 * min(speed_follower[3], max_angular), -max_angular)
 
-      f_publishers[i].publish(vel_msg)
+    vel_msg = Twist()
+
+    vel_msg.linear.x = speed_follower[0]
+    vel_msg.angular.z = speed_follower[1]
+
+    print('\t, follower ' + str(0) + ' speed:', vel_msg.linear.x, vel_msg.angular.z)
+    print()
+    print()
+
+    f_publishers[0].publish(vel_msg)
+
+    vel_msg.linear.x = speed_follower[2]
+    vel_msg.angular.z = speed_follower[3]
+    print('\t, follower ' + str(1) + ' speed:', vel_msg.linear.x, vel_msg.angular.z)
+    print()
+    print()
+
+    f_publishers[1].publish(vel_msg)
 
     rate_limiter.sleep()
+
+  # d = 0.05
+  # k = np.array([0.45, 0.24])
+  #
+  # cnt = 0
+  #
+  # while not rospy.is_shutdown():
+  #   if not leader_laser.ready:
+  #     rate_limiter.sleep()
+  #     continue
+  #
+  #   max_speed = 0.2
+  #   max_angular = 0.2
+  #
+  #   print('measurements', leader_laser.measurements)
+  #   u, w = obstacle_avoidance.braitenberg(*leader_laser.measurements)
+  #   print('vels', u, w)
+  #   vel_msg_l = Twist()
+  #   vel_msg_l.linear.x = max(min(u, max_speed * 0.5), -max_speed * 0.5)
+  #   vel_msg_l.angular.z = max(min(w, max_angular * 0.5), -max_angular * 0.5)
+  #   l_publisher.publish(vel_msg_l)
+  #   leader_pose = slam.get_pose(LEADER)
+  #
+  #   # chance of this happening if map-merge has not converged yet (or maybe some other reason)
+  #   if leader_pose is None:
+  #     rate_limiter.sleep()
+  #     continue
+  #
+  #   if leader_pose[YAW] < 0.:
+  #     leader_pose[YAW] += 2 * np.math.pi
+  #   print('leader_pose', leader_pose)
+  #   print('leader_speed', vel_msg_l.linear.x, vel_msg_l.angular.z)
+  #   for i, follower in enumerate(FOLLOWERS):
+  #
+  #     corrected_leader_pose = leader_pose
+  #     follower_pose = slam.get_pose(follower)
+  #
+  #     print()
+  #     print("FOLLOWER ", i)
+  #     print()
+  #
+  #     follower_laser = follower_lasers[i]
+  #     robots = follower_laser.find_robots()
+  #     best_ang_diff = float('inf')
+  #
+  #     for rel_robot_pos in robots:
+  #
+  #       rel_robot_position = rel_robot_pos[:-1]
+  #       global_leader_rel_follower_pos = get_relative_position(follower_pose, leader_pose[:-1])
+  #
+  #       dp = np.dot(rel_robot_position, global_leader_rel_follower_pos)
+  #       denom = ((np.linalg.norm(rel_robot_position) * np.linalg.norm(global_leader_rel_follower_pos)))
+  #       ang_diff = np.arccos(dp / denom)
+  #
+  #       print("\t GLOBAL FOLLOWER POSE: ", follower_pose)
+  #       print("\t REL LEADER POSITION: ", rel_robot_position)
+  #       print("\t GLOBAL LEADER POSE: ", leader_pose)
+  #       print("\t EUC DIST BETWEEN MAP-MERGE AND LASER follower<->leader", np.linalg.norm(rel_robot_position - global_leader_rel_follower_pos))
+  #       print("\t ANG BETWEEN MAP-MERGE AND LASER follower<->leader", ang_diff)
+  #
+  #       if np.abs(ang_diff) < 0.3 and np.abs(ang_diff) < best_ang_diff:
+  #         corrected_leader_pose[:-1] = rel_robot_position + follower_pose[:-1]
+  #     print()
+  #
+  #     if follower_pose[YAW] < 0.:
+  #       follower_pose[YAW] += 2 * np.math.pi
+  #
+  #     print('\t i, follower_pose:', i, follower_pose)
+  #
+  #     z = np.array([0., 0.])
+  #     z[0] = vector_length(corrected_leader_pose[:-1] - follower_pose[:-1])
+  #     z[1] = get_alpha(np.array([np.cos(corrected_leader_pose[YAW]), np.sin(corrected_leader_pose[YAW])]),
+  #                      follower_pose[:-1] - corrected_leader_pose[:-1])
+  #
+  #     beta = corrected_leader_pose[YAW] - follower_pose[YAW]
+  #     gamma = beta + z[1]
+  #
+  #     G = np.array([[np.cos(gamma), d * np.sin(gamma)],
+  #                   [-np.sin(gamma) / z[0], d * np.cos(gamma) / z[0]]])
+  #     F = np.array([[-np.cos(z[1]), 0],
+  #                   [np.sin(z[1]) / z[0], -1]])
+  #
+  #     print('\t zs', z, ' <-> ', zs_desired[follower])
+  #     p = k * (zs_desired[follower] - z)
+  #
+  #     speed_robot = np.array([vel_msg_l.linear.x, vel_msg_l.angular.z])
+  #     speed_follower = np.matmul(np.linalg.inv(G), (p - np.matmul(F, speed_robot)))
+  #     print('\t', speed_follower)
+  #     speed_follower[0] = max(min(speed_follower[0], max_speed), -max_speed)
+  #     speed_follower[1] = max(min(speed_follower[1], max_angular), -max_angular)
+  #
+  #     vel_msg = Twist()
+  #     if cnt < 500:
+  #       vel_msg = stop_msg
+  #       cnt += 500
+  #     else:
+  #       vel_msg.linear.x = speed_follower[0]
+  #       vel_msg.angular.z = speed_follower[1]
+  #
+  #     vel_msg.linear.x = speed_follower[0]
+  #     vel_msg.angular.z = speed_follower[1]
+  #
+  #     print('\t, follower ' + str(i) + ' speed:', vel_msg.linear.x, vel_msg.angular.z)
+  #     print()
+  #     print()
+  #
+  #     f_publishers[i].publish(vel_msg)
+  #
+  #   rate_limiter.sleep()
 
 
 if __name__ == '__main__':
