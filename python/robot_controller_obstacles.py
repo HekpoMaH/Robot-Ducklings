@@ -194,11 +194,11 @@ class GoalPose(object):
   def position(self):
     return self._position
 
-zs_desired = {FOLLOWERS[0]: [0.4, 3.*np.math.pi/4.],
-              FOLLOWERS[1]: [0.4, 5.*np.math.pi/4.]}
+zs_desired = {FOLLOWERS[0]: [0.6, 3.*np.math.pi/4.],
+              FOLLOWERS[1]: [0.6, 5.*np.math.pi/4.]}
 
-z_obstacle_desired = {FOLLOWERS[0]: [0.8, 0.30],
-                      FOLLOWERS[1]: [0.8, 0.30]}
+z_obstacle_desired = {FOLLOWERS[0]: [0.5, 0.80],
+                      FOLLOWERS[1]: [0.5, 0.80]}
 
 def set_distance_and_bearing(robot_name, dist, bearing):
     """ Bearing is always within [0; 2pi], not [-pi;pi] """
@@ -272,8 +272,8 @@ def find_nearest(angles, angle_to_robot):
 
 d = 0.05
 k = np.array([0.45, 0.04])
-max_speed = 0.28
-max_angular = 0.28
+max_speed = 0.48
+max_angular = 0.38
 
 def set_vel_no_obstacle(follower, follower_pose, leader_pose, speed_leader):
     global zs_desired, d, k, max_speed, max_angular
@@ -305,7 +305,7 @@ def set_vel_no_obstacle(follower, follower_pose, leader_pose, speed_leader):
 
 def set_vel_with_obstacle(follower, follower_pose, leader_pose, speed_leader, virtual_pose, delta):
     global zs_desired, d, max_speed, max_angular
-    k = [0.045, 0.4]
+    k = [0.45, 0.8]
 
     z = np.array([0., 0.])
     z[0] = vector_length(leader_pose[:-1] - follower_pose[:-1])
@@ -387,8 +387,8 @@ def run():
         u, w = obstacle_avoidance.braitenberg(*leader_laser.measurements)
         print('vels', u, w)
         vel_msg_l = Twist()
-        vel_msg_l.linear.x = max(min(u, 0.2), -0.2)
-        vel_msg_l.angular.z = max(min(w, 0.1), -0.1)
+        vel_msg_l.linear.x = max(min(u, 0.3), -0.3)
+        vel_msg_l.angular.z = max(min(w, 0.2), -0.2)
         l_publisher.publish(vel_msg_l)
         leader_pose = slam.get_pose(LEADER)
 
@@ -423,7 +423,7 @@ def run():
             
             print('\t closest obstacle', distances[min_idx])
             # proceed as normal
-            if distances[min_idx] > z_obstacle_desired[follower][1]:
+            if distances[min_idx] > 0.0*z_obstacle_desired[follower][1]:
                 print('case 1')
                 speed_follower = set_vel_no_obstacle(
                         follower,
