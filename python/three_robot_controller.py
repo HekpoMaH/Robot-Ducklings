@@ -327,12 +327,16 @@ class LegDetector(object):
 
   def callback(self, msg):
     # The pose from RViz is with respect to the "map".
-    x = msg.people[0].pos.x
-    y = msg.people[0].pos.y
-    print("PERSON X", x)
-    print("PERSON Y", y)
-    print("NUMBER FOUND:", len(msg.people))
-    print()
+
+    i = 0
+    for person in msg.people:
+      print("PERSON ", i)
+      x = person.pos.x
+      y = person.pos.y
+      print("\t X", x)
+      print("\t  Y", y)
+      print()
+      i += 1
 
     self._position[X] = x
     self._position[Y] = y
