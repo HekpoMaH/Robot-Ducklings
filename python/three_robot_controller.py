@@ -532,7 +532,7 @@ def run():
     # positionnn = np.random.rand(2)*4-2
     # print(leg_detector.position)
     print("GPOS", g_pos)
-    start_node, final_node = rrt.rrt(leader_pose, g_pos, slam.occupancy_grid)
+    start_node, final_node = rrt.rrt_star(leader_pose, g_pos, slam.occupancy_grid)
 
 
     current_path = get_path(final_node)
