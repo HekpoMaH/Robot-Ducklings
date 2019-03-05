@@ -6,6 +6,23 @@
     <arg name="second_tb3" default="tb3_1"/>
     <arg name="third_tb3"  default="tb3_2"/>
 
+    <!--SET THE PARAMS FOR THE POSITION OF THE ROBOTS-->
+    <!--<param name="tb3_0_x" type="double" value="-0.4"/>-->
+    <!--<param name="tb3_0_y" type="double" value="-1.0"/>-->
+    <!--<param name="tb3_0_z" type="double" value="0.0"/>-->
+    <!--<param name="tb3_0_yaw" type="double" value="0.0"/>-->
+
+    <!--<param name="tb3_1_x" type="double" value="-0.7"/>-->
+    <!--<param name="tb3_1_y" type="double" value="-1.0"/>-->
+    <!--<param name="tb3_1_z" type="double" value="0.0"/>-->
+    <!--<param name="tb3_1_yaw" type="double" value="0.0"/>-->
+
+    <!--<param name="tb3_2_x" type="double" value="-1.0"/>-->
+    <!--<param name="tb3_2_y" type="double" value="-1.0"/>-->
+    <!--<param name="tb3_2_z" type="double" value="0.0"/>-->
+    <!--<param name="tb3_2_yaw" type="double" value="0.0"/>-->
+
+
     <!-- BEGIN ROBOT 1 - THE LEADER-->
     <group ns="$(arg first_tb3)">
         <param name="tf_prefix" value="$(arg first_tb3)"/>

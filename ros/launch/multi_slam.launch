@@ -43,6 +43,9 @@
 
     <node pkg="tf" type="static_transform_publisher" name="map_broadcaster" args="0 0 0 0 0 0 map occupancy_grid 100" />
 
+    <!-- leg detect -->
+    <include file="$(find project)/ros/launch/leg_detector.launch"/>
+
     <!-- rviz -->
     <group if="$(arg open_rviz)">
         <node pkg="rviz" type="rviz" name="rviz" required="true"
