@@ -473,12 +473,12 @@ def run():
       rate_limiter.sleep()
       continue
 
-    slam.update(LEADER)
-
-    if not slam.ready:
-      print("2")
-      rate_limiter.sleep()
-      continue
+    # slam.update(LEADER)
+    #
+    # if not slam.ready:
+    #   print("2")
+    #   rate_limiter.sleep()
+    #   continue
 
     current_time = rospy.Time.now().to_sec()
     leader_pose = slam.get_pose(LEADER)
