@@ -225,7 +225,7 @@ class SimpleLaser(object):
 
 class SLAM(object):
   def __init__(self):
-    rospy.Subscriber('/map', OccupancyGrid, self.callback)
+    rospy.Subscriber('/tb3_0/map', OccupancyGrid, self.callback)
     self._tf = TransformListener()
     self._occupancy_grid = None
     self._pose = np.array([np.nan, np.nan, np.nan], dtype=np.float32)
@@ -309,7 +309,7 @@ class SLAM(object):
 
   @property
   def ready(self):
-    return self._occupancy_grid is not None and not np.isnan(self._pose[0])
+    return self._occupancy_grid is not None #and not np.isnan(self._pose[0])
 
   @property
   def pose(self):
@@ -473,7 +473,7 @@ def run():
       rate_limiter.sleep()
       continue
 
-    slam.update(LEADER)
+    # slam.update(LEADER)
 
     if not slam.ready:
       print("2")
@@ -489,7 +489,7 @@ def run():
       rate_limiter.sleep()
       continue
 
-    goal_reached = np.linalg.norm(leader_pose[:2] - leg_detector.position) < .2
+    goal_reached = np.linalg.norm(leader_pose[:2] - leg_detector.position) < .002
     if goal_reached:
       print("GOAL REACHED")
       l_publisher.publish(stop_msg)
@@ -518,10 +518,12 @@ def run():
     previous_time = current_time
 
     # Run RRT.
-    start_node, final_node = rrt.rrt_star(leader_pose, leg_detector.position, slam.occupancy_grid)
+    # positionnn = np.random.rand(2)*4-2
+    print(leg_detector.position)
+    start_node, final_node = rrt.rrt(leader_pose, leg_detector.position, slam.occupancy_grid)
+
+
     current_path = get_path(final_node)
-    if not current_path:
-      print('Unable to reach goal position:', leg_detector.position)
 
     # Publish path to RViz.
     path_msg = Path()
