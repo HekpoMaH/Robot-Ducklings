@@ -229,8 +229,10 @@ class SLAM(object):
     self._tf = TransformListener()
     self._occupancy_grid = None
     self._pose = np.array([np.nan, np.nan, np.nan], dtype=np.float32)
+    print("SLAM INITIALED")
 
   def callback(self, msg):
+    print("SLAM CALLBACK CALLED")
     values = np.array(msg.data, dtype=np.int8).reshape((msg.info.width, msg.info.height))
     processed = np.empty_like(values)
     processed[:] = rrt.FREE
@@ -462,21 +464,30 @@ def run():
   cnt = 0
 
   while not rospy.is_shutdown():
-    if not leader_laser.ready or not leg_detector.ready or not slam.ready:
+    if not leader_laser.ready or not leg_detector.ready:
+      print("1")
       rate_limiter.sleep()
       continue
 
     slam.update(LEADER)
+
+    if not slam.ready:
+      print("2")
+      rate_limiter.sleep()
+      continue
+
     current_time = rospy.Time.now().to_sec()
     leader_pose = slam.get_pose(LEADER)
 
     # chance of this happening if map-merge has not converged yet (or maybe some other reason)
     if leader_pose is None:
+      print("4")
       rate_limiter.sleep()
       continue
 
     goal_reached = np.linalg.norm(leader_pose[:2] - leg_detector.position) < .2
     if goal_reached:
+      print("GOAL REACHED")
       l_publisher.publish(stop_msg)
       f_publishers[0].publish(stop_msg)
       f_publishers[1].publish(stop_msg)
@@ -492,6 +503,7 @@ def run():
     vel_msg_l = Twist()
     vel_msg_l.linear.x = u
     vel_msg_l.angular.z = w
+    print("LEADER VeL MSG", vel_msg_l)
     l_publisher.publish(vel_msg_l)
 
     # Update plan every 1s.
