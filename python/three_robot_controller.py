@@ -47,6 +47,7 @@ OCCUPIED = 2
 
 SPEED = .2
 EPSILON = .1
+MAX_SPEED = .5
 
 ROBOT_RADIUS = 0.105 / 2.
 
@@ -61,8 +62,18 @@ FOLLOWERS = ['tb3_1', 'tb3_2']
 FOLLOWER_1 = 'tb3_1'
 FOLLOWER_2 = 'tb3_2'
 
+def cap(v, max_speed):
+  n = np.linalg.norm(v)
+  if n > max_speed:
+    return v / n * max_speed
+  return v
 
-def feedback_linearized(pose, velocity, epsilon):
+def feedback_linearized(pose, velocity, epsilon, relative=False):
+
+  if relative:
+      # that's for the potential fields and obstacles
+      pose[YAW] = 0.
+
   u = 0.  # [m/s]
   w = 0.  # [rad/s] going counter-clockwise.
 
@@ -75,6 +86,52 @@ def feedback_linearized(pose, velocity, epsilon):
 
   return u, w
 
+
+def dist_to_obstacle(position, obstacle_position, obstacle_radius):
+  # gets the distance to the obstacle's wall
+  dist = vector_length(position-obstacle_position)
+  dist -= obstacle_radius
+  return dist
+
+def get_velocity_to_avoid_obstacles(position, obstacle_positions, obstacle_radii, q_star=0.30):
+  v = np.zeros(2, dtype=np.float32)
+
+  # If an obstacle is further away, (more than Q*) it should not
+  # have any repulsive potential
+
+  for obstacle, radius in zip(obstacle_positions, obstacle_radii):
+
+    if obstacle is None:
+        continue
+
+    # distance to cylinder's WALL, not CENTER
+    d = dist_to_obstacle(position, obstacle, radius)
+    if d > q_star:
+      continue # skip that one
+    
+    # The position is inside obstacle, where the potential is inf,
+    # therefore the gradient inside an obstacle is 0
+    if d < 0.:
+      v = 0
+      break
+
+    # take the vector pointing outwards of the obstacle
+    vec = position - obstacle
+    vec /= vector_length(vec) # normalise it
+    # On the edge of the obstacle's field
+    # Q* will be equal to the distance, so the gradient
+    # will have magnitude 0.
+    # The closer to the obstacle, the larger
+    # the vector should be. As we approach the
+    # obstacle and the distance approaches 0,
+    # the gradient's magnitude goes
+    # towards infinity.
+    vec *= 2.5*(q_star-d)/d
+
+    vec = cap(vec, MAX_SPEED)
+    v += vec
+
+  return v
 
 def get_velocity(position, path_points):
   v = np.zeros_like(position)
@@ -182,10 +239,10 @@ def get_velocity(position, path_points):
 
 
 class SimpleLaser(object):
-  def __init__(self, robot_name):
+  def __init__(self, robot_name, angles=[0., np.pi / 4., -np.pi / 4., np.pi / 2., -np.pi / 2.], cone_view=10.):
     rospy.Subscriber('/' + robot_name + '/scan', LaserScan, self.callback)
-    self._angles = [0., np.pi / 4., -np.pi / 4., np.pi / 2., -np.pi / 2.]
-    self._width = np.pi / 180. * 10.  # 10 degrees cone of view.
+    self._angles = angles
+    self._width = np.pi / 180. * cone_view
     self._measurements = [float('inf')] * len(self._angles)
     self._indices = None
 
@@ -365,10 +422,12 @@ class LegDetector(object):
 
     x = highest_reliable_person.pos.x
     y = highest_reliable_person.pos.y
-    print("\t This is assumed to be the person")
-    print("\t X", x)
-    print("\t Y", y)
-    print()
+    
+    # Sometimes this is a bit off
+    # print("\t This is assumed to be the person")
+    # print("\t X", x)
+    # print("\t Y", y)
+    # print()
 
     self._position[X] = x
     self._position[Y] = y
@@ -443,8 +502,8 @@ def get_path(final_node):
   return zip(points_x, points_y)
 
 
-zs_desired = {FOLLOWERS[0]: [0.5, np.math.pi],
-              FOLLOWERS[1]: [1.0, np.math.pi]}
+zs_desired = {FOLLOWERS[0]: [0.4, 5. * np.math.pi / 4.],
+              FOLLOWERS[1]: [0.4, 3. * np.math.pi / 4.]}
 
 # right triangle, two sides 0.4
 #                  l12,  psi12          , l13,   l23
@@ -458,6 +517,25 @@ def set_distance_and_bearing(robot_name, dist, bearing):
   global zs_desired
   zs_desired[robot_name] = [dist, bearing]
 
+def get_potential_speed(pose, angles, measurements):
+
+
+    tot = np.array([0., 0.])
+    for alpha, lm in zip(angles, measurements):
+
+        if np.isnan(lm):
+            continue
+
+        obstacle_position = pose[:2] + lm*np.array([np.cos(alpha), np.sin(alpha)])
+        vec = get_velocity_to_avoid_obstacles(pose[:2], [obstacle_position], [.0])
+        tot += vec
+
+    tot = cap(tot, MAX_SPEED)
+    print('\t total', tot)
+    up, wp = feedback_linearized(pose, tot, .2, relative=True)
+    up *= .8
+    wp *= .6
+    return up, wp
 
 def run():
   global zs_desired
@@ -482,6 +560,10 @@ def run():
 
   leader_laser = SimpleLaser(LEADER)
 
+  angles = np.linspace(-np.math.pi, np.math.pi - EPSILON, 60)
+  f1_laser = SimpleLaser(FOLLOWERS[0], angles=angles, cone_view=4)
+  f2_laser = SimpleLaser(FOLLOWERS[1], angles=angles, cone_view=4)
+
   previous_time = rospy.Time.now().to_sec()
 
   # Make sure the robot is stopped.
@@ -496,11 +578,12 @@ def run():
 
   d = 0.05
   k = np.array([0.45, 0.24, 0.45, 0.45])
+  k2 = np.array([0.45, 0.04])
 
   cnt = 0
 
   while not rospy.is_shutdown():
-    if not leader_laser.ready or not leg_detector.ready:
+    if not leader_laser.ready or not f1_laser.ready or not f2_laser.ready or not leg_detector.ready:
       print("1")
       rate_limiter.sleep()
       continue
@@ -564,7 +647,7 @@ def run():
     # positionnn = np.random.rand(2)*4-2
     # print(leg_detector.position)
     print("GPOS", g_pos)
-    start_node, final_node = rrt.rrt_star(leader_pose, g_pos, slam.occupancy_grid)
+    start_node, final_node = rrt.rrt(leader_pose, g_pos, slam.occupancy_grid)
 
 
     current_path = get_path(final_node)
@@ -587,8 +670,8 @@ def run():
     # rate_limiter.sleep()
     frame_id += 1
 
-    max_speed = 1.0
-    max_angular = 0.7
+    max_speed = 0.5
+    max_angular = 0.35
 
     if leader_pose[YAW] < 0.:
       leader_pose[YAW] += 2 * np.math.pi
@@ -619,34 +702,78 @@ def run():
     z[2] = vector_length(leader_pose[:-1] - f2_pose[:-1])
     z[3] = vector_length(f1_pose[:-1] - f2_pose[:-1])
 
-    #         g12
-    gammas = [leader_pose[YAW] - f1_pose[YAW] + z[1]]
-    #             g13
-    gammas.append(leader_pose[YAW] - f2_pose[YAW] + extra_psis[0])
-    #             g23
-    gammas.append(f1_pose[YAW] - f2_pose[YAW] + extra_psis[1])
-    # beta =
-    # gamma = beta + z[1]
+    speed_follower = [0., 0., 0., 0.]
 
-    G = np.array([[np.cos(gammas[0]), d * np.sin(gammas[0]), 0, 0],
-                  [-np.sin(gammas[0]) / z[0], d * np.cos(gammas[0]) / z[0], 0, 0],
-                  [0, 0, np.cos(gammas[1]), d * np.sin(gammas[1])],
-                  [0, 0, np.cos(gammas[2]), d * np.sin(gammas[2])]])
-    F = np.array([[-np.cos(z[1]), 0],
-                  [np.sin(z[1]) / z[0], -1],
-                  [-np.cos(extra_psis[0]), 0],
-                  [0, 0]])
+    if z[0] < 2 * zs_both_desired[0] and z[2] < 2 * zs_both_desired[0]:
+        #         g12
+        gammas = [leader_pose[YAW] - f1_pose[YAW] + z[1]]
+        #             g13
+        gammas.append(leader_pose[YAW] - f2_pose[YAW] + extra_psis[0])
+        #             g23
+        gammas.append(f1_pose[YAW] - f2_pose[YAW] + extra_psis[1])
+        # beta =
+        # gamma = beta + z[1]
 
-    print('\t zs', z, ' <-> ', zs_both_desired)
-    p = k * (zs_both_desired - z)
+        G = np.array([[np.cos(gammas[0]), d * np.sin(gammas[0]), 0, 0],
+                      [-np.sin(gammas[0]) / z[0], d * np.cos(gammas[0]) / z[0], 0, 0],
+                      [0, 0, np.cos(gammas[1]), d * np.sin(gammas[1])],
+                      [0, 0, np.cos(gammas[2]), d * np.sin(gammas[2])]])
+        F = np.array([[-np.cos(z[1]), 0],
+                      [np.sin(z[1]) / z[0], -1],
+                      [-np.cos(extra_psis[0]), 0],
+                      [0, 0]])
 
-    speed_robot = np.array([vel_msg_l.linear.x, vel_msg_l.angular.z])
-    speed_follower = np.matmul(np.linalg.inv(G), (p - np.matmul(F, speed_robot)))
-    print('\t', speed_follower)
+        print('\t zs', z, ' <-> ', zs_both_desired)
+        p = k * (zs_both_desired - z)
+
+        speed_robot = np.array([vel_msg_l.linear.x, vel_msg_l.angular.z])
+        speed_follower = np.matmul(np.linalg.inv(G), (p - np.matmul(F, speed_robot)))
+        print('\t', speed_follower)
+
+    else:
+        speed_leader = [vel_msg_l.linear.x, vel_msg_l.angular.z]
+        z = np.array([0., 0.])
+        z[0] = vector_length(leader_pose[:-1] - f1_pose[:-1])
+        z[1] = get_alpha(np.array([np.cos(leader_pose[YAW]), np.sin(leader_pose[YAW])]),
+                         f1_pose[:-1] - leader_pose[:-1])
+
+        beta = leader_pose[YAW] - f1_pose[YAW]
+        gamma = beta + z[1]
+
+        G=np.array([[np.cos(gamma), d*np.sin(gamma)],
+                    [-np.sin(gamma)/z[0], d*np.cos(gamma)/z[0]]])
+        F=np.array([[-np.cos(z[1]), 0],
+                    [np.sin(z[1])/z[0], -1]])
+
+        p = k2 * (zs_desired[FOLLOWERS[0]]-z)
+        _speed_follower = np.matmul(np.linalg.inv(G), (p-np.matmul(F, speed_leader)))
+        speed_follower[0] = _speed_follower[0]
+        speed_follower[1] = _speed_follower[1]
+
+
+        z[0] = vector_length(leader_pose[:-1] - f2_pose[:-1])
+        z[1] = get_alpha(np.array([np.cos(leader_pose[YAW]), np.sin(leader_pose[YAW])]),
+                         f2_pose[:-1] - leader_pose[:-1])
+
+        beta = leader_pose[YAW] - f2_pose[YAW]
+        gamma = beta + z[1]
+
+        G=np.array([[np.cos(gamma), d*np.sin(gamma)],
+                    [-np.sin(gamma)/z[0], d*np.cos(gamma)/z[0]]])
+        F=np.array([[-np.cos(z[1]), 0],
+                    [np.sin(z[1])/z[0], -1]])
+
+        p = k2 * (zs_desired[FOLLOWERS[1]]-z)
+        _speed_follower = np.matmul(np.linalg.inv(G), (p-np.matmul(F, speed_leader)))
+        speed_follower[2] = _speed_follower[0]
+        speed_follower[3] = _speed_follower[1]
+
     speed_follower[0] = max(min(0.5 * speed_follower[0], max_speed), -max_speed)
     speed_follower[1] = max(min(0.4 * speed_follower[1], max_angular), -max_angular)
     speed_follower[2] = max(min(0.5 * speed_follower[2], max_speed), -max_speed)
     speed_follower[3] = max(min(0.4 * speed_follower[3], max_angular), -max_angular)
+
+    ut, wt = get_potential_speed(f1_pose, angles, f1_laser.measurements)
 
     vel_msg = Twist()
     # if cnt < 500:
@@ -656,18 +783,22 @@ def run():
     #     vel_msg.linear.x = speed_follower[0]
     #     vel_msg.angular.z = speed_follower[1]
 
-    vel_msg.linear.x = speed_follower[0]
-    vel_msg.angular.z = speed_follower[1]
+    vel_msg.linear.x = max(min(speed_follower[0] + ut, max_speed), -max_speed)
+    vel_msg.angular.z = max(min(speed_follower[1] + wt, max_angular), -max_angular)
 
     print('\t, follower ' + str(0) + ' speed:', vel_msg.linear.x, vel_msg.angular.z)
+    print('\t, follower ' + str(0) + ' potential:', ut, wt)
     print()
     print()
 
     f_publishers[0].publish(vel_msg)
 
-    vel_msg.linear.x = speed_follower[2]
-    vel_msg.angular.z = speed_follower[3]
+    ut, wt = get_potential_speed(f2_pose, angles, f2_laser.measurements)
+
+    vel_msg.linear.x = max(min(speed_follower[2] + ut, max_speed), -max_speed)
+    vel_msg.angular.z = max(min(speed_follower[3] + wt, max_angular), -max_angular)
     print('\t, follower ' + str(1) + ' speed:', vel_msg.linear.x, vel_msg.angular.z)
+    print('\t, follower ' + str(1) + ' potential:', ut, wt)
     print()
     print()
 
