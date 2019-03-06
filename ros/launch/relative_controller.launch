@@ -1,0 +1,5 @@
+<launch>
+	<arg name="mode" />
+
+	<node pkg="project" type="relative_controller.py" name="relative_controller" output="screen"></node>
+</launch>
