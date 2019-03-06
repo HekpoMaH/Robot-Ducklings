@@ -321,22 +321,54 @@ class SLAM(object):
 
 
 class LegDetector(object):
-  def __init__(self):
+  def __init__(self, slam):
     rospy.Subscriber('/leg_tracker_measurements', PositionMeasurementArray, self.callback)
     self._position = np.array([np.nan, np.nan], dtype=np.float32)
+    self._slam = slam
 
   def callback(self, msg):
     # The pose from RViz is with respect to the "map".
 
-    i = 0
-    for person in msg.people:
-      print("PERSON ", i)
-      x = person.pos.x
-      y = person.pos.y
-      print("\t X", x)
-      print("\t  Y", y)
-      print()
-      i += 1
+    if not self._slam.ready:
+        return
+
+    f_pose = [None, None]
+    f_pose[0] = self._slam.get_pose(FOLLOWERS[0])
+    f_pose[1] = self._slam.get_pose(FOLLOWERS[1])
+    # if it is tagged then it is not a person, but a robot
+    tags = [False] * len(msg.people) 
+    for follower_pos in f_pose:
+        min_idx = -1
+        min_len = 1e9
+        for i, person in enumerate(msg.people):
+            person_pos = np.array([person.pos.x, person.pos.y])
+            if vector_length(person_pos-follower_pos[:2]) < min_len:
+                min_idx = i
+                min_len = vector_length(person_pos-follower_pos[:2])
+
+        if len(msg.people) != 0:
+            tags[min_idx] = True
+
+    highest_reliability = -1e9
+    highest_reliable_person = None
+    for i, person in enumerate(msg.people):
+
+        if tags[i] == True:
+            continue
+
+        if person.reliability > highest_reliability:
+            highest_reliable_person = person
+            highest_reliability = person.reliability
+
+    if highest_reliable_person is None:
+        return
+
+    x = highest_reliable_person.pos.x
+    y = highest_reliable_person.pos.y
+    print("\t This is assumed to be the person")
+    print("\t X", x)
+    print("\t Y", y)
+    print()
 
     self._position[X] = x
     self._position[Y] = y
@@ -438,7 +470,7 @@ def run():
     f_publishers[i] = rospy.Publisher('/' + follower + '/cmd_vel', Twist, queue_size=5)
 
   slam = SLAM()
-  leg_detector = LegDetector()
+  leg_detector = LegDetector(slam)
   rate_limiter = rospy.Rate(ROSPY_RATE)
   frame_id = 0
   current_path = []
