@@ -5,6 +5,7 @@
     <arg name="second_tb3" default="tb3_1"/>
     <arg name="third_tb3"  default="tb3_2"/>
     <arg name="open_rviz" default="false"/>
+    <arg name="not_relative" default="false"/>
 
     <!--
     This allows the RobotModel in RViz to look like the TurtleBot3
@@ -37,14 +38,13 @@
         </include>
     </group>
 
-
-    <!-- map merge -->
-    <include file="$(find project)/ros/launch/multi_map_merge.launch"/>
-
-    <node pkg="tf" type="static_transform_publisher" name="map_broadcaster" args="0 0 0 0 0 0 map occupancy_grid 100" />
-
-    <!-- leg detect -->
-    <include file="$(find project)/ros/launch/leg_detector.launch"/>
+    <group if="$(arg not_relative)">
+        <!--map merge -->
+        <include file="$(find project)/ros/launch/multi_map_merge.launch"/>
+        <node pkg="tf" type="static_transform_publisher" name="map_broadcaster" args="0 0 0 0 0 0 map occupancy_grid 100" />
+        <!-- leg detect -->
+        <include file="$(find project)/ros/launch/leg_detector.launch"/>
+    </group>
 
     <!-- rviz -->
     <group if="$(arg open_rviz)">
