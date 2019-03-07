@@ -46,6 +46,7 @@ ROSPY_RATE = 50
 
 LIDAR_ROBOTS = 0
 LIDAR_OBSTACLES = 1
+LIDAR_ALL = 2
 
 X = 0
 Y = 1
@@ -155,6 +156,7 @@ class SimpleLaser(object):
     ranges = self._ranges
     robots = []
     obstacles = []
+    all = []
 
 
     def delete_outliers(s):
@@ -241,6 +243,8 @@ class SimpleLaser(object):
     for k in range(0, len(cl)):
       cl_k = cl[k]
 
+      all.append(cl_k)
+
       if len(cl_k) < min_points:
         continue
 
@@ -326,6 +330,7 @@ class SimpleLaser(object):
 
     result[LIDAR_ROBOTS] = robots
     result[LIDAR_OBSTACLES] = obstacles
+    result[LIDAR_ALL] = all
 
     return result
 
@@ -724,17 +729,19 @@ def run():
     l_res = leader_laser.cluster_environment()
     lrs = l_res[LIDAR_ROBOTS]
     lobs = l_res[LIDAR_OBSTACLES]
+    lall = l_res[LIDAR_ALL]
     print()
     print("FOLLOWER1: FINDING ROBOTS")
     f1_res = follower_lasers[0].cluster_environment()
     f1rs = f1_res[LIDAR_ROBOTS]
     f1obs = f1_res[LIDAR_OBSTACLES]
+    f1all = f1_res[LIDAR_ALL]
     print()
     print("FOLLOWER2: FINDING ROBOTS")
     f2_res = follower_lasers[1].cluster_environment()
     f2rs = f2_res[LIDAR_ROBOTS]
     f2obs = f2_res[LIDAR_OBSTACLES]
-
+    f2all = f2_res[LIDAR_ALL]
     print()
     print("ROBOTS FROM LEADER PERSPECTIVE:", lrs)
     print("ROBOTS FROM FOLLOWER1 PERSPECTIVE:", f1rs)
