@@ -256,32 +256,32 @@ class SimpleLaser(object):
       e_span_lidar_p = 2 * self.boundary_circ_angle(center_d + LIDAR_RADIUS + lidar_radius_fuzz,
                                                     LIDAR_RADIUS + lidar_radius_fuzz)
 
-      e_span = 2 * self.boundary_circ_angle(center_d + ROBOT_RADIUS, ROBOT_RADIUS)
-      e_rect_span = 2 * self.boundary_rect_angle(center_d, ROBOT_WIDTH)
-      e_rect_lidar = 2 * self.boundary_rect_angle(center_d, 2 * LIDAR_RADIUS)
-      e_rect_lidar_p = 2 * self.boundary_rect_angle(center_d, 2 * (LIDAR_RADIUS+lidar_radius_fuzz))
+      # e_span = 2 * self.boundary_circ_angle(center_d + ROBOT_RADIUS, ROBOT_RADIUS)
+      # e_rect_span = 2 * self.boundary_rect_angle(center_d, ROBOT_WIDTH)
+      # e_rect_lidar = 2 * self.boundary_rect_angle(center_d, 2 * LIDAR_RADIUS)
+      # e_rect_lidar_p = 2 * self.boundary_rect_angle(center_d, 2 * (LIDAR_RADIUS+lidar_radius_fuzz))
 
-      print("CENTER D", center_d)
-      print("A SPAN", a_span)
-      print("E SPAN", e_span)
-      print("E SPAN LIDAR", e_span_lidar)
-      print("E RECT SPAN", e_rect_span)
-      print("E SPAN LIDAR P", e_span_lidar_p)
-      print("E RECT LIDAR", e_rect_lidar)
-      print("E RECT LIDAR", e_rect_lidar_p)
-      print()
+      # print("CENTER D", center_d)
+      # print("A SPAN", a_span)
+      # print("E SPAN", e_span)
+      # print("E SPAN LIDAR", e_span_lidar)
+      # print("E RECT SPAN", e_rect_span)
+      # print("E SPAN LIDAR P", e_span_lidar_p)
+      # print("E RECT LIDAR", e_rect_lidar)
+      # print("E RECT LIDAR", e_rect_lidar_p)
+      # print()
 
       # if np.abs(a_span - e_span_lidar) > 3 * increment:
       if a_span < e_span_lidar or a_span > e_span_lidar_p:
-        print("PURGING CLUSTER (1) AS OBSTACLE")
-        for c in cl_k:
-          print("\t ", c)
+        # print("PURGING CLUSTER (1) AS OBSTACLE")
+        # for c in cl_k:
+        #   print("\t ", c)
         obstacles.append(cl_k)
         continue
-      else:
-        print("KEEPING CLUSTER (1)")
-        for c in cl_k:
-          print("\t ", c)
+      # else:
+        # print("KEEPING CLUSTER (1)")
+        # for c in cl_k:
+        #   print("\t ", c)
 
       # size of cluster is close to robot. Now check that points are circular using Internal Angle Variance (IAV)
       cart_cl_k = [np.array([dist * np.cos(ang), dist * np.sin(ang)]) for (dist, ang) in cl_k]
@@ -304,9 +304,9 @@ class SimpleLaser(object):
       # print("ANGLES STD", std)
 
       if mean < shape_mean_min or mean > shape_mean_max or std > shape_std:
-        print("PURGING CLUSTER (2) AS OBSTACLE")
-        for c in cl_k:
-          print("\t ", c)
+        # print("PURGING CLUSTER (2) AS OBSTACLE")
+        # for c in cl_k:
+        #   print("\t ", c)
         obstacles.append(cl_k)
         continue
 
