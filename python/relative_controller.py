@@ -47,6 +47,7 @@ ROSPY_RATE = 50
 LIDAR_ROBOTS = 0
 LIDAR_OBSTACLES = 1
 LIDAR_ALL = 2
+LIDAR_RAW = 3
 
 X = 0
 Y = 1
@@ -146,7 +147,7 @@ class SimpleLaser(object):
 
   def cluster_environment(self):
 
-    result = [[]]*2
+    result = [[]]*4
 
     if self._ranges is None:
       self._counter += 1
@@ -204,6 +205,8 @@ class SimpleLaser(object):
     s = [(dist, increment * index) for (index, dist) in enumerate(ranges)]
     s = delete_outliers(s)
     fs = []
+
+    result[LIDAR_RAW] = s
 
     # distance truncation
     for i, (d, a) in enumerate(s):
