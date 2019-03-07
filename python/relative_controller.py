@@ -661,12 +661,90 @@ class RobotControl(object):
 
     return velocities
 
-  def three_robot(self):
+  def three_robot(self, max_speed, max_angular):
+    z = np.array([0., 0., 0., 0.])
+    # r f1 to leader
+    z[0] = self._followers[0][0][0]
+    # bearing f1 to l
+    z[1] = self._followers[0][1][1]
+    if z[1] < 0.:
+        z[1] += 2*np.math.pi
+    # r f2 to l
+    z[2] = self._followers[1][0][0]
+
+    # all wrt to leader
+    r1_coord = ThreeRobotMatcher.pol2cart(*self._followers[0][1])
+    r2_coord = ThreeRobotMatcher.pol2cart(*self._followers[1][1])
+    z[3] = vector_length(r1_coord-r2_coord)
+
+    # initially I used this, but the outliers...
+    # for rob in f1rs:
+    #     diff = abs(rob[0]-z[0])
+    #     # more than 10% difference wrt the measurement
+    #     if diff/rob[0] > 0.1:
+    #         # r f1 to f2
+    #         z[3] = rob[0]
+    #         break
+    # else:
+    #     # if it's < 10% doesn't matter who we pick
+    #     z[3] = f1rs[0][0]
+
+    # cosine becomes with too many cases...
+
+    speed_follower = [0., 0., 0., 0.]
+    # using the same logic
+    lf = self._followers[0][0]
+    fl = self._followers[0][1]
+
+    #  g12
+    gammas = [np.pi + fl[1] - lf[1] + z[1]]
+
+    lf = self._followers[1][0]
+    fl = self._followers[1][1]
+    #             g13
+    gammas.append(np.pi + fl[1] - lf[1] + extra_psis[0])
+
+    
+    #             g23
+    # TODO Get gamma23 to be right, yep, the below does definitely not work
+    gammas.append(fl[1] - lf[1] - (self._followers[0][1][1] - self._followers[0][0][1]) + extra_psis[1])
+
+    d = 0.05
+    G=np.array([[np.cos(gammas[0]), d*np.sin(gammas[0]), 0, 0],
+                [-np.sin(gammas[0])/z[0], d*np.cos(gammas[0])/z[0], 0, 0],
+                [0, 0, np.cos(gammas[1]), d*np.sin(gammas[1])],
+                [0, 0, np.cos(gammas[2]), d*np.sin(gammas[2])]])
+    F=np.array([[-np.cos(z[1]), 0],
+                [np.sin(z[1])/z[0], -1],
+                [-np.cos(extra_psis[0]), 0],
+                [0, 0]])
+        
+    k = np.array([0.45, 0.24, 0.45, 0.45])
+    print('\t zs', z, ' <-> ', zs_both_desired)
+    p = k * (zs_both_desired-z)
+
+    speed_robot = np.array([self._leader_vel.linear.x, self._leader_vel.angular.z])
+    speed_followers = np.matmul(np.linalg.inv(G), (p-np.matmul(F, speed_robot)))
+
+    vel_msgs = []
+    vel_msg = Twist()
+
+    speed_coeff = 5
+    angular_coeff = 5
+    vel_msg.linear.x = np.clip(speed_followers[0], -max_speed*speed_coeff, max_speed*speed_coeff)
+    vel_msg.angular.z = np.clip(speed_followers[1], -max_angular * angular_coeff, max_angular * angular_coeff)
+    vel_msgs.append(vel_msg)
+    vel_msg.linear.x = np.clip(speed_followers[2], -max_speed*speed_coeff, max_speed*speed_coeff)
+    vel_msg.angular.z = np.clip(speed_followers[3], -max_angular * angular_coeff, max_angular * angular_coeff)
+    vel_msgs.append(vel_msg)
+    return vel_msgs
     pass
 
   def three_robot_with_potential_field(self):
     pass
 
+  def total(self):
+    pass
 
 zs_desired = {FOLLOWERS[0]: np.array([0.4, 3.*np.math.pi/4.]),
               FOLLOWERS[1]: np.array([0.75, 4.3*np.math.pi/4.])}
@@ -770,7 +848,8 @@ def run():
     control = RobotControl(fps, vel_msg_l, zs_desired)
 
     # get the follower velocities calling the desired control algo
-    velocities = control.basic(max_speed, max_angular)
+    # velocities = control.basic(max_speed, max_angular)
+    velocities = control.three_robot(max_speed, max_angular)
 
     for i, f_publisher in enumerate(f_publishers):
       f_publisher.publish(velocities[i])
