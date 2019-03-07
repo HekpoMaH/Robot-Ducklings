@@ -56,20 +56,6 @@ FOLLOWER_1 = 'tb3_1'
 FOLLOWER_2 = 'tb3_2'
 
 
-def feedback_linearized(pose, velocity, epsilon):
-  u = 0.  # [m/s]
-  w = 0.  # [rad/s] going counter-clockwise.
-
-  # MISSING: Implement feedback-linearization to follow the velocity
-  # vector given as argument. Epsilon corresponds to the distance of
-  # linearized point in front of the robot.
-
-  u = velocity[X] * np.cos(pose[YAW]) + velocity[Y] * np.sin(pose[YAW])
-  w = (1 / epsilon) * (-velocity[X] * np.sin(pose[YAW]) + velocity[Y] * np.cos(pose[YAW]))
-
-  return u, w
-
-
 class SimpleLaser(object):
   def __init__(self, robot_name, braitenberg = False):
     rospy.Subscriber('/' + robot_name + '/scan', LaserScan, self.callback)
@@ -153,140 +139,7 @@ class SimpleLaser(object):
   def boundary_rect_angle(self, center_distance, width):
     return np.arctan((width/2) / center_distance)
 
-  def find_robots_2(self):
-
-    if self._ranges is None:
-      self._counter += 1
-      return
-
-    increment = self._increment
-    ranges = self._ranges
-
-    def delete_outliers(s):
-
-      outlier_thresh = 0.1
-      new_s = []
-
-      for i, (d, a) in enumerate(s):
-        d_next, a_next = s[np.mod(i+1, len(s))]
-        d_prev, a_prev = s[np.mod(i+1, len(s))]
-
-        if  (np.abs(d - d_next) > outlier_thresh and np.abs(d - d_prev) > outlier_thresh):
-          continue
-        new_s.append((d, a))
-
-      return new_s
-
-    def fit_circle(points, guess):
-
-      x0 = guess
-
-      print("FIT CIRCLE GUESS", x0)
-
-      def f(x):
-        res = 0
-        for i in range(0, len(points)):
-          d_i = points[i][0]
-          a_i = points[i][1]
-          a = np.square(d_i * np.cos(a_i) - x[0])
-          b = np.square(d_i * np.sin(a_i) - x[1])
-          res += np.square(np.sqrt(a + b) - ROBOT_RADIUS)
-        return res
-
-      res = least_squares(f, x0)
-
-      print("FIT CIRLCE RESULT", res)
-      print()
-      print()
-
-      return res
-
-
-    max_d = 1.5
-    t_sec = 0.05
-    t_max_sel = np.ceil(2 * self.boundary_circ_angle(3.5 + ROBOT_RADIUS, ROBOT_RADIUS) / increment)
-    t_min_sel = np.ceil(2 * self.boundary_circ_angle(0.1 + ROBOT_RADIUS, ROBOT_RADIUS) / increment)
-
-    ranges_dict = {index: r for (index, r) in enumerate(ranges) if r != float('inf')}
-    s = [(dist, increment * index) for (index, dist) in enumerate(ranges)]
-    s = delete_outliers(s)
-
-    fs = []
-
-    # distance truncation
-    for i, (d, a) in enumerate(s):
-      if d < max_d:
-        fs.append((d, a))
-
-    s = fs
-
-    if len(s) < 1:
-      return []
-
-    n_cl = 0
-    cl = [[s[n_cl]]]
-
-    # point cloud clustering
-    for k in range(2, len(s)):
-      s_k = s[k]
-      s_k_m = s[k-1]
-      s_k_mm = s[k-2]
-
-      if np.abs(s_k_m[0] - s_k[0]) > t_sec:
-        n_cl += 1
-        cl.append([s_k])
-      else:
-        cl[n_cl].append(s_k)
-
-    f_cl = []
-
-    # cluster selection
-    for k in range(0, n_cl + 1):
-      cl_k = cl[k]
-
-      center_d = min(cl_k, key=lambda x: x[0])[0]
-      min_a = min(cl_k, key=lambda x: x[1])[1]
-      max_a = max(cl_k, key=lambda x: x[1])[1]
-
-      a_span = max_a - min_a + increment
-      e_span = 2 * self.boundary_circ_angle(center_d + ROBOT_RADIUS, ROBOT_RADIUS)
-
-      print("CENTER D", center_d)
-      print("A SPAN", a_span)
-      print("E SPAN", e_span)
-      print()
-      print()
-
-      if np.abs(a_span - e_span) > 3 * increment:
-        n_cl -= 1
-        continue
-
-      f_cl.append(cl_k)
-
-    print()
-    print()
-    print("NUMBER OF CLUSTERS", len(f_cl))
-
-    robots = []
-
-    for i, cl in enumerate(f_cl):
-      center_t = min(cl, key=lambda x: x[0])
-      len_to_center = center_t[0] + ROBOT_RADIUS
-      print("CLUSTER", i)
-      for dist, ang in cl:
-        print("ANG", ang, "DIST", dist)
-      # print("CLUSTER", i, "CIRCLE CENTER", coord)
-      res = fit_circle(cl, np.array([len_to_center * np.cos(center_t[1]), len_to_center * np.sin(center_t[1])]))
-      robots.append(res.x)
-      print()
-
-    print()
-
-    return robots
-
-
-
-  def find_robots_3(self):
+  def find_robots(self):
 
     if self._ranges is None:
       self._counter += 1
@@ -467,87 +320,6 @@ class SimpleLaser(object):
 
     return robots
 
-  def find_robots(self):
-
-    if self._ranges is None:
-      self._counter += 1
-      return
-
-    increment = self._increment
-    ranges = self._ranges
-    ranges_dict = {index: r for (index, r) in enumerate(ranges) if r != float('inf')}
-
-    robots = []
-    min_elements = 3
-
-    loop = 1
-    while(len(robots) < ROBOT_COUNT - 1 and len(ranges_dict) > min_elements):
-
-      # print("LOOP", loop)
-      # print("DICT LENGTH", len(ranges_dict))
-
-      index_min = min(ranges_dict, key=ranges_dict.get)
-      min_val = ranges[index_min]
-      angle = increment * index_min
-
-      # assume this is the center of the circle
-      center_circ_dist = min_val + ROBOT_RADIUS
-      max_circ_angle = self.boundary_circ_angle(center_circ_dist, ROBOT_RADIUS)
-      mca_rel_index = int(np.floor(np.abs(max_circ_angle) / increment))
-
-      explore_right_angs = True
-      explore_left_angs = True
-      r_index = 0
-      l_index = 0
-
-      # for i in range(index_min - 20, index_min + 20, 1):
-      #   print("Index", i, "Val", ranges[np.mod(i, len(ranges))])
-      # print()
-
-      def ranges_mod(x):
-        return ranges[np.mod(x, len(ranges))]
-
-      # the two while statements below look to the left and right on index_min to found the boundary of the object
-
-      while explore_right_angs:
-        if r_index < 90 and np.abs(ranges_mod(index_min + r_index + 1) - ranges_mod(index_min + r_index)) < 0.05:
-          r_index += 1
-        else:
-          explore_right_angs = False
-
-      while explore_left_angs:
-        if l_index < 90 and np.abs(ranges_mod(index_min - l_index - 1) - ranges_mod(index_min - l_index)) < 0.05:
-          l_index += 1
-        else:
-          explore_left_angs = False
-
-      block_index_span = r_index + l_index
-
-      if 2 * mca_rel_index > min_elements and np.abs(block_index_span - 2 * mca_rel_index) < 4:
-
-        robot_center_index = np.mod(int(index_min - l_index + block_index_span / 2), len(ranges))
-        robot_inline_dist = ranges[robot_center_index]
-        robot_center_dist = robot_inline_dist + ROBOT_RADIUS
-        robot_center = np.array([robot_center_dist * np.cos(robot_center_index * self._increment),
-                                 robot_center_dist * np.sin(robot_center_index * self._increment),
-                                 angle])
-        robots.append(robot_center)
-        print("PROBABLY A ROBOT WITH RELATIVE COORDS", robot_center)
-
-      # print("INDEX_MIN: ", index_min)
-
-      for i in range(index_min - l_index, index_min + r_index + 1):
-        if i < 0:
-          i = len(ranges) + i
-        # print("DELETING KEY", i)
-        i = np.mod(i, len(ranges))
-        if i in ranges_dict:
-          del ranges_dict[i]
-
-      loop += 1
-
-    return robots
-
 
 class SLAM(object):
   def __init__(self):
@@ -619,27 +391,6 @@ class SLAM(object):
     return self._occupancy_grid
 
 
-# Not sure if we need this guy
-class GoalPose(object):
-  def __init__(self):
-    rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.callback)
-    self._position = np.array([np.nan, np.nan], dtype=np.float32)
-
-  def callback(self, msg):
-    # The pose from RViz is with respect to the "map".
-    self._position[X] = msg.pose.position.x
-    self._position[Y] = msg.pose.position.y
-    print('Received new goal position:', self._position)
-
-  @property
-  def ready(self):
-    return not np.isnan(self._position[0])
-
-  @property
-  def position(self):
-    return self._position
-
-
 class ThreeRobotMatcher(object):
 
   def __init__(self, leader_set, f1_set, f2_set):
@@ -672,10 +423,10 @@ class ThreeRobotMatcher(object):
 
     # if the leader can only see one follower, and one of the followers can see both the leader and other follower
     if len(self._lrs) == 1:
-      matches = self._find_matches(self._lrs[0], self._mfrs)
+      # matches = self._find_matches(self._lrs[0], self._mfrs)
       # match is (f_index, diff, fr, lrs[0])
 
-      middle_f, lower_f = ((0, self._frs[0]), (1, self._frs[1])) if len(self._frs) > 1 else ((1, self._frs[1]), (0, self._frs[0]))
+      middle_f, lower_f = ((0, self._frs[0]), (1, self._frs[1])) if len(self._frs[0]) > 1 else ((1, self._frs[1]), (0, self._frs[0]))
       middle_f = [(middle_f[0], r) for r in middle_f[1]]
       lower_f = [(lower_f[0], r) for r in lower_f[1]]
 
@@ -839,6 +590,65 @@ class ThreeRobotMatcher(object):
     return self._followers
 
 
+class RobotControl(object):
+
+  def __init__(self, followers, leader_vel, desired_pose):
+    self._followers = followers
+    self._leader_vel = leader_vel
+    self._desired_pose = desired_pose
+
+  def basic(self, max_speed, max_angular):
+
+    k = np.array([0.45, 0.24])
+    d = 0.05
+    angular_coeff = 5
+    speed_coeff = 5
+
+    velocities = [0]*2
+
+    for i, follower in enumerate(self._followers):
+
+      # lf is (r, theta) from leader to follower
+      # fl is (r, theta) from follower to leader
+      lf = follower[0]
+      fl = follower[1]
+
+      z = np.array([0., 0.])
+      z[0] = lf[0]
+      z[1] = lf[1]
+
+      if z[1] < 0.:
+        z[1] += 2 * np.math.pi
+
+      # this gets the angle between the bearing of the leader and follower (from frame of follower)
+      beta = np.pi + fl[1] - lf[1]
+      gamma = beta + z[1]
+
+      G = np.array([[np.cos(gamma), d * np.sin(gamma)],
+                    [-np.sin(gamma) / z[0], d * np.cos(gamma) / z[0]]])
+      F = np.array([[-np.cos(z[1]), 0],
+                    [np.sin(z[1]) / z[0], -1]])
+
+      print('\t z<->zs', z, ' <-> ', self._desired_pose[FOLLOWERS[i]])
+      p = k * (self._desired_pose[FOLLOWERS[i]] - z)
+      print('\t p k * (zs - z)', p)
+
+      speed_robot = np.array([self._leader_vel.linear.x, self._leader_vel.angular.z])
+      vel_follower = np.matmul(np.linalg.inv(G), (p - np.matmul(F, speed_robot)))
+
+      vel_msg = Twist()
+
+      vel_msg.linear.x = np.clip(vel_follower[0], -max_speed*speed_coeff, max_speed*speed_coeff)
+      vel_msg.angular.z = np.clip(vel_follower[1], -max_angular * angular_coeff, max_angular * angular_coeff)
+      velocities[i] = vel_msg
+
+    return velocities
+
+  def three_robot(self):
+    pass
+
+  def three_robot_with_potential_field(self):
+    pass
 
 
 zs_desired = {FOLLOWERS[0]: np.array([0.4, 3.*np.math.pi/4.]),
@@ -849,32 +659,13 @@ zs_both_desired = [0.4, 5.*np.math.pi/4., 0.4, np.sqrt(0.32)]
 #              psi13,            psi23
 extra_psis = [3.*np.math.pi/4., np.math.pi/2.]
 
-
-# def set_distance_and_bearing(robot_name, dist, bearing):
-#   """ Bearing is always within [0; 2pi], not [-pi;pi] """
-#   global zs_desired
-#   zs_desired[robot_name] = [dist, bearing]
-#
-# def get_relative_position(absolute_pose, absolute_position):
-#   relative_position = absolute_position.copy()
-#   diff_vec = absolute_position - absolute_pose[:2]
-#
-#   rx_x = (diff_vec[X]) * np.cos(absolute_pose[YAW])
-#   rx_y = (diff_vec[Y]) * np.sin(absolute_pose[YAW])
-#   ry_x = (diff_vec[X]) * np.sin(absolute_pose[YAW])
-#   ry_y = (diff_vec[Y]) * np.cos(absolute_pose[YAW])
-#
-#   relative_position[X] = rx_x + rx_y
-#   relative_position[Y] = -ry_x + ry_y
-#
-#   return relative_position
-
-speed_coeff = 1.
+speed_coefficient = 1.
 
 
 def run():
   global zs_desired
-  global speed_coeff
+  global speed_coefficient
+  
   rospy.init_node('robot_controller')
   rate_limiter = rospy.Rate(ROSPY_RATE)
 
@@ -891,8 +682,6 @@ def run():
   stop_msg.linear.x = 0.
   stop_msg.angular.z = 0.
 
-  previous_time = rospy.Time.now().to_sec()
-
   # Make sure the robot is stopped.
   i = 0
   while i < 10 and not rospy.is_shutdown():
@@ -905,9 +694,6 @@ def run():
 
   max_speed = 0.06
   max_angular = 0.06
-  k = np.array([0.45, 0.24])
-  d = 0.05
-  cnt = 0
 
   while not rospy.is_shutdown():
     if not leader_laser.ready:
@@ -917,8 +703,8 @@ def run():
     # print('measurments', leader_laser.measurements)
     # u, w = rule_based(*leader_laser.measurements)
     u, w = obstacle_avoidance.braitenberg(*leader_laser.measurements)
-    u *= speed_coeff * 0.25
-    w *= speed_coeff * 0.25
+    u *= speed_coefficient * 0.25
+    w *= speed_coefficient * 0.25
     print('vels', u, w)
     vel_msg_l = Twist()
     vel_msg_l.linear.x = np.clip(u, -max_speed, max_speed)
@@ -927,13 +713,13 @@ def run():
 
     print()
     print("LEADER: FINDING ROBOTS")
-    lrs = leader_laser.find_robots_3()
+    lrs = leader_laser.find_robots()
     print()
     print("FOLLOWER1: FINDING ROBOTS")
-    f1rs = follower_lasers[0].find_robots_3()
+    f1rs = follower_lasers[0].find_robots()
     print()
     print("FOLLOWER2: FINDING ROBOTS")
-    f2rs = follower_lasers[1].find_robots_3()
+    f2rs = follower_lasers[1].find_robots()
 
     print()
     print("ROBOTS FROM LEADER PERSPECTIVE:", lrs)
@@ -942,24 +728,9 @@ def run():
 
     print()
 
-    # if the followers are not picked up on radar
-    # if len(lrs) < 1 or len(f1) < 1 or len(f2) < 1:
-    #   speed_coeff = np.abs(speed_coeff) * 0.95
-    #   stop_msg = Twist()
-    #   stop_msg.linear.x = 0.
-    #   stop_msg.angular.z = 0.
-    #   f_publishers[0].publish(stop_msg)
-    #   f_publishers[1].publish(stop_msg)
-    #   rate_limiter.sleep()
-    #   continue
-    # l_publisher.publish(stop_msg)
-    # f_publishers[0].publish(stop_msg)
-    # f_publishers[1].publish(stop_msg)
-    # rate_limiter.sleep()
-    # continue
-
+    # if the robots can't see eachother (with the leader seeing at least one follower)
     if not (len(lrs) > 0 and ((len(f1rs) > 0 and len(f2rs) > 1) or (len(f2rs) > 0 and len(f1rs) > 1))):
-      speed_coeff = np.abs(speed_coeff) * 0.95
+      speed_coefficient = np.abs(speed_coefficient) * 0.95
       stop_msg = Twist()
       stop_msg.linear.x = 0.
       stop_msg.angular.z = 0.
@@ -967,177 +738,23 @@ def run():
       f_publishers[1].publish(stop_msg)
       rate_limiter.sleep()
       continue
+    else:
+      speed_coefficient = 1.
 
-    speed_coeff = 1.
-
-    # f1_set = []
-    # f2_set = []
-    #
-    # f1_pred = (lrs[0], lrs[0])
-    # f2_pred = (lrs[1], lrs[1])
-    #
-    # if len(f1rs) >= 2 and len(f2rs) >= 2:
-    #
-    #   for j,lr in enumerate(lrs):
-    #
-    #     lr_dist = lr[0]
-    #
-    #     for i, fr in enumerate(f1rs):
-    #       fr_dist = fr[0]
-    #       diff = np.abs(lr_dist - fr_dist)
-    #       f1_set.append((j, diff, fr))
-    #
-    #     for i, fr in enumerate(f2rs):
-    #       fr_dist = fr[0]
-    #       diff = np.abs(lr_dist - fr_dist)
-    #       f2_set.append((j, diff, fr))
-    #
-    #   f1_set = sorted(f1_set, key=lambda x: x[1])
-    #   f2_set = sorted(f2_set, key=lambda x: x[1])
-    #
-    #   f1 = f1_set[0]
-    #   f2 = f2_set[0]
-    #
-    #   if f1[0] == f2[0]:
-    #     if f1[1] > f2[1]:
-    #       f1 = f1_set[1]
-    #     else:
-    #       f2 = f2_set[1]
-    #
-    #   print("LRS", lrs)
-    #   print("f1", f1)
-    #   print("f2", f2)
-    #   print()
-    #
-    #   f1_pred = (lrs[f1[0]], f1[2])
-    #   f2_pred = (lrs[f2[0]], f2[2])
-
-    # fps =[f1_pred, f2_pred]
-
-
-
-
-    # now have f1_pred and f2_pred predictions
-
-    z = np.array([0., 0.])
-    # z[0] = vector_length(corrected_leader_pose[:-1] - f1_pose[:-1])
-    # z[1] = get_alpha(np.array([np.cos(corrected_leader_pose[YAW]), np.sin(corrected_leader_pose[YAW])]),
-    #                  f1_pose[:-1] - corrected_leader_pose[:-1])
-    # z[2] = vector_length(corrected_leader_pose[:-1] - f2_pose[:-1])
-    # z[3] = vector_length(f1_pose[:-1] - f2_pose[:-1])
-    # z[0] = f1_pred[0]
-    # z[1] = f1_pred[1]
-    # z[2] = f2_pred[0]
-
+    # match the observed robot from the lidar to {leader, follower1, follower2}
     matcher = ThreeRobotMatcher(lrs, f1rs, f2rs)
     fps = matcher.followers
 
-    for i, follower in enumerate(FOLLOWERS):
+    # initiate the control class
+    control = RobotControl(fps, vel_msg_l, zs_desired)
 
-      f_pred = fps[i]
+    # get the follower velocities calling the desired control algo
+    velocities = control.basic(max_speed, max_angular)
 
-      print("FOLLOWER ", i)
-      print()
-
-      z = np.array([0., 0.])
-      z[0] = f_pred[0][0]
-      z[1] = f_pred[0][1]
-
-      if z[1] < 0.:
-        z[1] += 2 * np.math.pi
-
-      print("Z[0]", z[0])
-
-
-      beta = np.pi + f_pred[1][1] - f_pred[0][1]
-      gamma = beta + z[1]
-
-      G = np.array([[np.cos(gamma), d * np.sin(gamma)],
-                    [-np.sin(gamma) / z[0], d * np.cos(gamma) / z[0]]])
-      F = np.array([[-np.cos(z[1]), 0],
-                    [np.sin(z[1]) / z[0], -1]])
-
-      # print("ZS", zs_desired[follower])
-      # print("ZS SHAPE", zs_desired[follower].shape)
-      # print("Z", z)
-      # print("Z shape", z.shape)
-
-      print('\t z<->zs', z, ' <-> ', zs_desired[follower])
-      p = k * (zs_desired[follower] - z)
-      print('\t p k * (zs - z)', p)
-
-      speed_robot = np.array([vel_msg_l.linear.x, vel_msg_l.angular.z])
-      speed_follower = np.matmul(np.linalg.inv(G), (p - np.matmul(F, speed_robot)))
-      print('\t speed follower', speed_follower)
-      speed_follower[0] = max(min(speed_follower[0], max_speed * 2), -max_speed * 2)
-      speed_follower[1] = max(min(speed_follower[1], max_angular * 5), -max_angular * 5)
-
-      vel_msg = Twist()
-      if cnt < 500:
-        vel_msg = stop_msg
-        cnt += 500
-      else:
-        vel_msg.linear.x = speed_follower[0]
-        vel_msg.angular.z = speed_follower[1]
-
-      vel_msg.linear.x = speed_follower[0]
-      vel_msg.angular.z = speed_follower[1]
-
-      print('\t, follower ' + str(i) + ' speed:', vel_msg.linear.x, vel_msg.angular.z)
-
-      f_publishers[i].publish(vel_msg)
+    for i, f_publisher in enumerate(f_publishers):
+      f_publisher.publish(velocities[i])
 
     rate_limiter.sleep()
-
-    # #         g12
-    # gammas = [corrected_leader_pose[YAW] - f1_pose[YAW] + z[1]]
-    # #             g13
-    # gammas.append(corrected_leader_pose[YAW] - f2_pose[YAW] + extra_psis[0])
-    # #             g23
-    # gammas.append(f1_pose[YAW] - f2_pose[YAW] + extra_psis[1])
-    # # beta =
-    # # gamma = beta + z[1]
-    #
-    # G = np.array([[np.cos(gammas[0]), d * np.sin(gammas[0]), 0, 0],
-    #               [-np.sin(gammas[0]) / z[0], d * np.cos(gammas[0]) / z[0], 0, 0],
-    #               [0, 0, np.cos(gammas[1]), d * np.sin(gammas[1])],
-    #               [0, 0, np.cos(gammas[2]), d * np.sin(gammas[2])]])
-    # F = np.array([[-np.cos(z[1]), 0],
-    #               [np.sin(z[1]) / z[0], -1],
-    #               [-np.cos(extra_psis[0]), 0],
-    #               [0, 0]])
-    #
-    # print('\t zs', z, ' <-> ', zs_both_desired)
-    # p = k * (zs_both_desired - z)
-    #
-    # speed_robot = np.array([vel_msg_l.linear.x, vel_msg_l.angular.z])
-    # speed_follower = np.matmul(np.linalg.inv(G), (p - np.matmul(F, speed_robot)))
-    # print('\t', speed_follower)
-    # speed_follower[0] = max(0.5 * min(speed_follower[0], max_speed), -max_speed)
-    # speed_follower[1] = max(0.4 * min(speed_follower[1], max_angular), -max_angular)
-    # speed_follower[2] = max(0.5 * min(speed_follower[2], max_speed), -max_speed)
-    # speed_follower[3] = max(0.4 * min(speed_follower[3], max_angular), -max_angular)
-    #
-    # vel_msg = Twist()
-    #
-    # vel_msg.linear.x = speed_follower[0]
-    # vel_msg.angular.z = speed_follower[1]
-    #
-    # print('\t, follower ' + str(0) + ' speed:', vel_msg.linear.x, vel_msg.angular.z)
-    # print()
-    # print()
-    #
-    # f_publishers[0].publish(vel_msg)
-    #
-    # vel_msg.linear.x = speed_follower[2]
-    # vel_msg.angular.z = speed_follower[3]
-    # print('\t, follower ' + str(1) + ' speed:', vel_msg.linear.x, vel_msg.angular.z)
-    # print()
-    # print()
-    #
-    # f_publishers[1].publish(vel_msg)
-    #
-    # rate_limiter.sleep()
 
 
 if __name__ == '__main__':
