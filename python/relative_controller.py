@@ -37,8 +37,10 @@ FREE = 0
 UNKNOWN = 1
 OCCUPIED = 2
 
-ROBOT_RADIUS = 0.105 / 2.
-INTER_WHEEL_RADIUS = 0.6
+ROBOT_RADIUS = 0.105
+INTER_WHEEL_RADIUS = 0.8
+ROBOT_WIDTH = 0.16
+LIDAR_RADIUS = 0.035
 
 ROSPY_RATE = 50
 
@@ -282,18 +284,22 @@ class SimpleLaser(object):
 
     return robots
 
+
+
   def find_robots_3(self):
 
     if self._ranges is None:
       self._counter += 1
-      return
+      return []
 
     increment = self._increment
     ranges = self._ranges
+    robots = []
+
 
     def delete_outliers(s):
 
-      outlier_thresh = 0.1
+      outlier_thresh = 0.25
       new_s = []
 
       for i, (d, a) in enumerate(s):
@@ -324,17 +330,22 @@ class SimpleLaser(object):
 
       return res
 
-    max_d = 2.5
+    max_dist = 2.5
     min_points = 3
     t_sec = 0.05
+    cluster_angle_mult = 1.1
+    lidar_radius_fuzz = 0.05
+    shape_mean_min = 1.4
+    shape_mean_max = 1.6
+    shape_std = 0.15
+
     s = [(dist, increment * index) for (index, dist) in enumerate(ranges)]
     s = delete_outliers(s)
-
     fs = []
 
     # distance truncation
     for i, (d, a) in enumerate(s):
-      if d < max_d:
+      if d < max_dist:
         fs.append((d, a))
 
     s = fs
@@ -342,45 +353,77 @@ class SimpleLaser(object):
     if len(s) < 1:
       return []
 
-    n_cl = 0
-    cl = [[s[n_cl]]]
+    cl = []
+    start = 0
 
-    # point cloud clustering
-    for k in range(2, len(s)):
+    # start clustering on boundary of cluster
+    for k in range(0, len(s)):
       s_k = s[k]
       s_k_m = s[k-1]
-      s_k_mm = s[k-2]
+      ang_diff = s_k[1] - s_k_m[1] + 2*np.pi if s_k[1] - s_k_m[1] < 0 else s_k[1] - s_k_m[1]
+      if np.abs(s_k_m[0] - s_k[0]) > t_sec or ang_diff > cluster_angle_mult * increment:
+        start = k
+        break
 
-      if np.abs(s_k_m[0] - s_k[0]) > t_sec:
-        n_cl += 1
+    # point cloud clustering
+    for k in range(start, start + len(s)):
+      s_k = s[np.mod(k, len(s))]
+      s_k_m = s[np.mod(k-1, len(s))]
+      ang_diff = s_k[1] - s_k_m[1] + 2 * np.pi if s_k[1] - s_k_m[1] < 0 else s_k[1] - s_k_m[1]
+      if np.abs(s_k_m[0] - s_k[0]) > t_sec or ang_diff > cluster_angle_mult * increment:
         cl.append([s_k])
       else:
-        cl[n_cl].append(s_k)
+        cl[len(cl) - 1].append(s_k)
 
+    # n_cl = len(cl)-1
     f_cl = []
 
     # cluster selection
-    for k in range(0, n_cl + 1):
+    for k in range(0, len(cl)):
       cl_k = cl[k]
 
       if len(cl_k) < min_points:
-        n_cl -= 1
+        # n_cl -= 1
         continue
 
       center_d = min(cl_k, key=lambda x: x[0])[0]
-      min_a = min(cl_k, key=lambda x: x[1])[1]
-      max_a = max(cl_k, key=lambda x: x[1])[1]
+      min_a = cl_k[0][1]
+      max_a = cl_k[len(cl_k)-1][1]
+      diff_ang = max_a - min_a
+      if diff_ang < 0:
+        diff_ang = diff_ang + np.pi * 2
 
-      a_span = max_a - min_a + increment
-      e_span = 2 * self.boundary_circ_angle(center_d + ROBOT_RADIUS, ROBOT_RADIUS)
+      a_span = diff_ang + increment * 2
+      e_span_lidar = 2 * self.boundary_circ_angle(center_d + LIDAR_RADIUS, LIDAR_RADIUS)
+      e_span_lidar_p = 2 * self.boundary_circ_angle(center_d + LIDAR_RADIUS + lidar_radius_fuzz,
+                                                    LIDAR_RADIUS + lidar_radius_fuzz)
+
+      # e_span = 2 * self.boundary_circ_angle(center_d + ROBOT_RADIUS, ROBOT_RADIUS)
+      # e_rect_span = 2 * self.boundary_rect_angle(center_d, ROBOT_WIDTH)
+      # e_rect_lidar = 2 * self.boundary_rect_angle(center_d, 2 * LIDAR_RADIUS)
+      # e_rect_lidar_p = 2 * self.boundary_rect_angle(center_d, 2 * (LIDAR_RADIUS+lidar_radius_fuzz))
 
       # print("CENTER D", center_d)
       # print("A SPAN", a_span)
       # print("E SPAN", e_span)
+      # print("E SPAN LIDAR", e_span_lidar)
+      # print("E RECT SPAN", e_rect_span)
+      # print("E SPAN LIDAR P", e_span_lidar_p)
+      # print("E RECT LIDAR", e_rect_lidar)
+      # print("E RECT LIDAR", e_rect_lidar_p)
+      # print()
 
-      if np.abs(a_span - e_span) > 3 * increment:
-        n_cl -= 1
+      # if np.abs(a_span - e_span_lidar) > 3 * increment:
+      if a_span < e_span_lidar or a_span > e_span_lidar_p:
+        # print("PURGING CLUSTER (1)")
+        # for c in cl_k:
+        #   print("\t ", c)
+        # n_cl -= 1
         continue
+      # else:
+      #   print("KEEPING CLUSTER (1)")
+      #   for c in cl_k:
+      #     print("\t ", c)
 
       # size of cluster is close to robot. Now check that points are circular using Internal Angle Variance (IAV)
       cart_cl_k = [np.array([dist * np.cos(ang), dist * np.sin(ang)]) for (dist, ang) in cl_k]
@@ -402,24 +445,17 @@ class SimpleLaser(object):
       # print("ANGLES MEAN", mean)
       # print("ANGLES STD", std)
 
-      if mean < 1.4 or mean > 2.3 or std > 0.15:
+      if mean < shape_mean_min or mean > shape_mean_max or std > shape_std:
+        # print("PURGING CLUSTER (2)", cl_k)
+        # for c in cl_k:
+        #   print("\t ", c)
         continue
 
       f_cl.append(cl_k)
 
-    # print()
-    # print()
-    # print("************** NUMBER OF CLUSTERS", len(f_cl))
-
-    robots = []
-
     for i, cl in enumerate(f_cl):
       center_t = min(cl, key=lambda x: x[0])
-      len_to_center = center_t[0] + ROBOT_RADIUS
-      # print("CLUSTER", i)
-      # for dist, ang in cl:
-      #   print("ANG", ang, "DIST", dist)
-      # print("CLUSTER", i, "CIRCLE CENTER", coord)
+      len_to_center = center_t[0] + LIDAR_RADIUS
       res = fit_circle(cl, np.array([len_to_center * np.cos(center_t[1]), len_to_center * np.sin(center_t[1])]))
       coords = res.x
 
@@ -428,9 +464,6 @@ class SimpleLaser(object):
       theta = np.arctan2(coords[1], coords[0])
 
       robots.append((r, theta))
-      # print()
-
-    # print()
 
     return robots
 
@@ -607,11 +640,209 @@ class GoalPose(object):
     return self._position
 
 
-# zs_desired = {FOLLOWERS[0]: [0.5, np.math.pi],
-#               FOLLOWERS[1]: [1.0, np.math.pi]}
+class ThreeRobotMatcher(object):
 
-zs_desired = {FOLLOWERS[0]: np.array([0.35, 3.*np.math.pi/4.]),
-              FOLLOWERS[1]: np.array([0.7, 5.*np.math.pi/4.])}
+  def __init__(self, leader_set, f1_set, f2_set):
+    self._lrs = leader_set
+    self._frs = [f1_set, f2_set]
+    self._mfrs = []
+    self._followers = []
+
+    for i, set in enumerate(self._frs):
+      for r in set:
+        self._mfrs.append((i, r))
+
+    self._match()
+
+  @staticmethod
+  def cart2pol(x, y):
+    rho = np.sqrt(x ** 2 + y ** 2)
+    phi = np.arctan2(y, x)
+    return np.array([rho, phi])
+
+  @staticmethod
+  def pol2cart(rho, phi):
+    x = rho * np.cos(phi)
+    y = rho * np.sin(phi)
+    return np.array([x, y])
+
+  def _match(self):
+
+    followers = [None, None]
+
+    # if the leader can only see one follower, and one of the followers can see both the leader and other follower
+    if len(self._lrs) == 1:
+      matches = self._find_matches(self._lrs[0], self._mfrs)
+      # match is (f_index, diff, fr, lrs[0])
+
+      middle_f, lower_f = ((0, self._frs[0]), (1, self._frs[1])) if len(self._frs) > 1 else ((1, self._frs[1]), (0, self._frs[0]))
+      middle_f = [(middle_f[0], r) for r in middle_f[1]]
+      lower_f = [(lower_f[0], r) for r in lower_f[1]]
+
+      middle_matches = self._find_matches(self._lrs[0], middle_f)
+      middle_match = middle_matches[0]
+      m_i = middle_match[0]
+      followers[m_i] = (middle_match[3], middle_match[2])
+
+      # match = matches[0]
+      # m_i = match[0]
+      # followers[m_i] = (self._lrs[0], match[3])
+
+      # match_f_cart is cartesian vector from middle follower to leader (in mf frame)
+      # match_l_cart is cartesian vector from leader to middle follower (in leader frame)
+      match_f_cart = self.pol2cart(*middle_match[2])
+      match_l_cart = self.pol2cart(*middle_match[3])
+
+      # index of the other follower
+      o_i = lower_f[0][0]
+
+      # the other robot found is presumably from the other follower.
+      # other_f is from middle follower to end follower (in mf frame)
+      # other_ff is from end follower to middle follower (in ef frame)
+      other_f = [m for (f_i, m) in middle_f if m != middle_match[2]][0]
+      other_ff = lower_f[0][1]
+
+      of_cart = self.pol2cart(*other_f)
+      off_cart = self.pol2cart(*other_ff)
+
+      om_l_cart = match_l_cart + of_cart
+      om_f_cart = match_f_cart + off_cart
+
+      om_l = self.cart2pol(*om_l_cart)
+      om_f = self.cart2pol(*om_f_cart)
+
+      print("**LINE")
+
+      followers[o_i] = (om_l, om_f)
+
+    else:  # leader can see both followers
+
+      f1_set = []
+      f2_set = []
+
+      # for i, lr in enumerate(self._lrs):
+      #   # matches = self._find_matches(lr, self._mfrs)
+      #   frs1 = [(0, m) for m in self._frs[0]]
+      #   frs2 = [(1, m) for m in self._frs[0]]
+      #   f1_matches = self._find_matches(lr, frs1)
+      #   f2_matches = self._find_matches(lr, frs2)
+      #
+      #   followers[0] = (f1_matches[0][3], f1_matches[0][2])
+      #   followers[1] = (f2_matches[0][3], f2_matches[0][2])
+
+      for j, lr in enumerate(self._lrs):
+        lr_dist = lr[0]
+
+        for i, fr in enumerate(self._frs[0]):
+          fr_dist = fr[0]
+          diff = np.abs(lr_dist - fr_dist)
+          f1_set.append((j, diff, fr, lr))
+
+        for i, fr in enumerate(self._frs[1]):
+          fr_dist = fr[0]
+          diff = np.abs(lr_dist - fr_dist)
+          f2_set.append((j, diff, fr, lr))
+
+      f1_set = sorted(f1_set, key=lambda x: x[1])
+      f2_set = sorted(f2_set, key=lambda x: x[1])
+
+      f1 = f1_set[0]
+      f2 = f2_set[0]
+
+      if f1[0] == f2[0]:
+        if len(f1_set) == 1:
+          f2 = f2_set[1]
+        elif len(f2_set) == 1:
+          f1 = f1_set[1]
+        else:
+          if f1[1] > f2[1]:
+            f1 = f1_set[1]
+          else:
+            f2 = f2_set[1]
+
+      followers[0] = (f1[3], f1[2])
+      followers[1] = (f2[3], f2[2])
+
+
+      # f1_set = []
+      # f2_set = []
+      #
+      # f1_pred = (lrs[0], lrs[0])
+      # f2_pred = (lrs[1], lrs[1])
+      #
+      # if len(f1rs) >= 2 and len(f2rs) >= 2:
+      #
+      #   for j,lr in enumerate(lrs):
+      #
+      #     lr_dist = lr[0]
+      #
+      #     for i, fr in enumerate(f1rs):
+      #       fr_dist = fr[0]
+      #       diff = np.abs(lr_dist - fr_dist)
+      #       f1_set.append((j, diff, fr))
+      #
+      #     for i, fr in enumerate(f2rs):
+      #       fr_dist = fr[0]
+      #       diff = np.abs(lr_dist - fr_dist)
+      #       f2_set.append((j, diff, fr))
+      #
+      #   f1_set = sorted(f1_set, key=lambda x: x[1])
+      #   f2_set = sorted(f2_set, key=lambda x: x[1])
+      #
+      #   f1 = f1_set[0]
+      #   f2 = f2_set[0]
+      #
+      #   if f1[0] == f2[0]:
+      #     if f1[1] > f2[1]:
+      #       f1 = f1_set[1]
+      #     else:
+      #       f2 = f2_set[1]
+
+      print("FORWARD")
+
+        # if len(f1_matches) == 1 or len(f2_matches) == 1:
+        #   followers[0] = (f1_matches[0][3], f1_matches[0][2])
+        #   followers[1] = (f2_matches[0][3], f2_matches[0][2])
+        # else:
+        #
+        #
+        # m_ind = 0
+        #
+        # while True:
+        #   match = matches[m_ind]
+        #   m_i = match[0]
+        #   if followers[m_i] is None:
+        #     followers[m_i] = (match[3], match[2])
+        #     break
+        #   m_ind += 1
+
+    self._followers = followers
+    print("FOLLOWERS", followers)
+    print()
+
+  def _find_matches(self, needle, haystack):
+
+    n_dist = needle[0]
+    n_ang = needle[1]
+
+    res = []
+    for (i, r) in haystack:
+      dist = r[0]
+      ang = r[1]
+      diff = np.abs(n_dist - dist)
+      res.append((i, diff, r, needle))
+
+    return sorted(res, key= lambda x: x[1])
+
+  @property
+  def followers(self):
+    return self._followers
+
+
+
+
+zs_desired = {FOLLOWERS[0]: np.array([0.4, 3.*np.math.pi/4.]),
+              FOLLOWERS[1]: np.array([0.75, 4.3*np.math.pi/4.])}
 # right triangle, two sides 0.4
 #                  l12,  psi12          , l13,   l23
 zs_both_desired = [0.4, 5.*np.math.pi/4., 0.4, np.sqrt(0.32)]
@@ -619,24 +850,24 @@ zs_both_desired = [0.4, 5.*np.math.pi/4., 0.4, np.sqrt(0.32)]
 extra_psis = [3.*np.math.pi/4., np.math.pi/2.]
 
 
-def set_distance_and_bearing(robot_name, dist, bearing):
-  """ Bearing is always within [0; 2pi], not [-pi;pi] """
-  global zs_desired
-  zs_desired[robot_name] = [dist, bearing]
-
-def get_relative_position(absolute_pose, absolute_position):
-  relative_position = absolute_position.copy()
-  diff_vec = absolute_position - absolute_pose[:2]
-
-  rx_x = (diff_vec[X]) * np.cos(absolute_pose[YAW])
-  rx_y = (diff_vec[Y]) * np.sin(absolute_pose[YAW])
-  ry_x = (diff_vec[X]) * np.sin(absolute_pose[YAW])
-  ry_y = (diff_vec[Y]) * np.cos(absolute_pose[YAW])
-
-  relative_position[X] = rx_x + rx_y
-  relative_position[Y] = -ry_x + ry_y
-
-  return relative_position
+# def set_distance_and_bearing(robot_name, dist, bearing):
+#   """ Bearing is always within [0; 2pi], not [-pi;pi] """
+#   global zs_desired
+#   zs_desired[robot_name] = [dist, bearing]
+#
+# def get_relative_position(absolute_pose, absolute_position):
+#   relative_position = absolute_position.copy()
+#   diff_vec = absolute_position - absolute_pose[:2]
+#
+#   rx_x = (diff_vec[X]) * np.cos(absolute_pose[YAW])
+#   rx_y = (diff_vec[Y]) * np.sin(absolute_pose[YAW])
+#   ry_x = (diff_vec[X]) * np.sin(absolute_pose[YAW])
+#   ry_y = (diff_vec[Y]) * np.cos(absolute_pose[YAW])
+#
+#   relative_position[X] = rx_x + rx_y
+#   relative_position[Y] = -ry_x + ry_y
+#
+#   return relative_position
 
 speed_coeff = 1.
 
@@ -672,8 +903,8 @@ def run():
     rate_limiter.sleep()
     i += 1
 
-  max_speed = 0.1
-  max_angular = 0.1
+  max_speed = 0.06
+  max_angular = 0.06
   k = np.array([0.45, 0.24])
   d = 0.05
   cnt = 0
@@ -690,12 +921,18 @@ def run():
     w *= speed_coeff * 0.25
     print('vels', u, w)
     vel_msg_l = Twist()
-    vel_msg_l.linear.x = max(min(u, max_speed), -max_speed)
-    vel_msg_l.angular.z = max(min(w, max_speed), -max_speed)
+    vel_msg_l.linear.x = np.clip(u, -max_speed, max_speed)
+    vel_msg_l.angular.z = np.clip(w, -max_speed, max_speed)
     l_publisher.publish(vel_msg_l)
 
+    print()
+    print("LEADER: FINDING ROBOTS")
     lrs = leader_laser.find_robots_3()
+    print()
+    print("FOLLOWER1: FINDING ROBOTS")
     f1rs = follower_lasers[0].find_robots_3()
+    print()
+    print("FOLLOWER2: FINDING ROBOTS")
     f2rs = follower_lasers[1].find_robots_3()
 
     print()
@@ -706,7 +943,22 @@ def run():
     print()
 
     # if the followers are not picked up on radar
-    if len(lrs) < 2:
+    # if len(lrs) < 1 or len(f1) < 1 or len(f2) < 1:
+    #   speed_coeff = np.abs(speed_coeff) * 0.95
+    #   stop_msg = Twist()
+    #   stop_msg.linear.x = 0.
+    #   stop_msg.angular.z = 0.
+    #   f_publishers[0].publish(stop_msg)
+    #   f_publishers[1].publish(stop_msg)
+    #   rate_limiter.sleep()
+    #   continue
+    # l_publisher.publish(stop_msg)
+    # f_publishers[0].publish(stop_msg)
+    # f_publishers[1].publish(stop_msg)
+    # rate_limiter.sleep()
+    # continue
+
+    if not (len(lrs) > 0 and ((len(f1rs) > 0 and len(f2rs) > 1) or (len(f2rs) > 0 and len(f1rs) > 1))):
       speed_coeff = np.abs(speed_coeff) * 0.95
       stop_msg = Twist()
       stop_msg.linear.x = 0.
@@ -718,47 +970,52 @@ def run():
 
     speed_coeff = 1.
 
-    f1_set = []
-    f2_set = []
+    # f1_set = []
+    # f2_set = []
+    #
+    # f1_pred = (lrs[0], lrs[0])
+    # f2_pred = (lrs[1], lrs[1])
+    #
+    # if len(f1rs) >= 2 and len(f2rs) >= 2:
+    #
+    #   for j,lr in enumerate(lrs):
+    #
+    #     lr_dist = lr[0]
+    #
+    #     for i, fr in enumerate(f1rs):
+    #       fr_dist = fr[0]
+    #       diff = np.abs(lr_dist - fr_dist)
+    #       f1_set.append((j, diff, fr))
+    #
+    #     for i, fr in enumerate(f2rs):
+    #       fr_dist = fr[0]
+    #       diff = np.abs(lr_dist - fr_dist)
+    #       f2_set.append((j, diff, fr))
+    #
+    #   f1_set = sorted(f1_set, key=lambda x: x[1])
+    #   f2_set = sorted(f2_set, key=lambda x: x[1])
+    #
+    #   f1 = f1_set[0]
+    #   f2 = f2_set[0]
+    #
+    #   if f1[0] == f2[0]:
+    #     if f1[1] > f2[1]:
+    #       f1 = f1_set[1]
+    #     else:
+    #       f2 = f2_set[1]
+    #
+    #   print("LRS", lrs)
+    #   print("f1", f1)
+    #   print("f2", f2)
+    #   print()
+    #
+    #   f1_pred = (lrs[f1[0]], f1[2])
+    #   f2_pred = (lrs[f2[0]], f2[2])
 
-    f1_pred = (lrs[0], lrs[0])
-    f2_pred = (lrs[1], lrs[1])
+    # fps =[f1_pred, f2_pred]
 
-    if len(f1rs) >= 2 and len(f2rs) >= 2:
 
-      for j,lr in enumerate(lrs):
 
-        lr_dist = lr[0]
-
-        for i, fr in enumerate(f1rs):
-          fr_dist = fr[0]
-          diff = np.abs(lr_dist - fr_dist)
-          f1_set.append((j, diff, fr))
-
-        for i, fr in enumerate(f2rs):
-          fr_dist = fr[0]
-          diff = np.abs(lr_dist - fr_dist)
-          f2_set.append((j, diff, fr))
-
-      f1_set = sorted(f1_set, key=lambda x: x[1])
-      f2_set = sorted(f2_set, key=lambda x: x[1])
-
-      f1 = f1_set[0]
-      f2 = f2_set[0]
-
-      if f1[0] == f2[0]:
-        if f1[1] > f2[1]:
-          f1 = f1_set[1]
-        else:
-          f2 = f2_set[1]
-
-      print("LRS", lrs)
-      print("f1", f1)
-      print("f2", f2)
-      print()
-
-      f1_pred = (lrs[f1[0]], f1[2])
-      f2_pred = (lrs[f2[0]], f2[2])
 
     # now have f1_pred and f2_pred predictions
 
@@ -772,7 +1029,8 @@ def run():
     # z[1] = f1_pred[1]
     # z[2] = f2_pred[0]
 
-    fps = [f1_pred, f2_pred]
+    matcher = ThreeRobotMatcher(lrs, f1rs, f2rs)
+    fps = matcher.followers
 
     for i, follower in enumerate(FOLLOWERS):
 
