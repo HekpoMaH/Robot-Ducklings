@@ -44,6 +44,9 @@ LIDAR_RADIUS = 0.035
 
 ROSPY_RATE = 50
 
+LIDAR_ROBOTS = 0
+LIDAR_OBSTACLES = 1
+
 X = 0
 Y = 1
 YAW = 2
@@ -139,15 +142,19 @@ class SimpleLaser(object):
   def boundary_rect_angle(self, center_distance, width):
     return np.arctan((width/2) / center_distance)
 
-  def find_robots(self):
+
+  def cluster_environment(self):
+
+    result = [[]]*2
 
     if self._ranges is None:
       self._counter += 1
-      return []
+      return result
 
     increment = self._increment
     ranges = self._ranges
     robots = []
+    obstacles = []
 
 
     def delete_outliers(s):
@@ -204,7 +211,7 @@ class SimpleLaser(object):
     s = fs
 
     if len(s) < 1:
-      return []
+      return result
 
     cl = []
     start = 0
@@ -228,7 +235,6 @@ class SimpleLaser(object):
       else:
         cl[len(cl) - 1].append(s_k)
 
-    # n_cl = len(cl)-1
     f_cl = []
 
     # cluster selection
@@ -236,7 +242,6 @@ class SimpleLaser(object):
       cl_k = cl[k]
 
       if len(cl_k) < min_points:
-        # n_cl -= 1
         continue
 
       center_d = min(cl_k, key=lambda x: x[0])[0]
@@ -251,32 +256,32 @@ class SimpleLaser(object):
       e_span_lidar_p = 2 * self.boundary_circ_angle(center_d + LIDAR_RADIUS + lidar_radius_fuzz,
                                                     LIDAR_RADIUS + lidar_radius_fuzz)
 
-      # e_span = 2 * self.boundary_circ_angle(center_d + ROBOT_RADIUS, ROBOT_RADIUS)
-      # e_rect_span = 2 * self.boundary_rect_angle(center_d, ROBOT_WIDTH)
-      # e_rect_lidar = 2 * self.boundary_rect_angle(center_d, 2 * LIDAR_RADIUS)
-      # e_rect_lidar_p = 2 * self.boundary_rect_angle(center_d, 2 * (LIDAR_RADIUS+lidar_radius_fuzz))
+      e_span = 2 * self.boundary_circ_angle(center_d + ROBOT_RADIUS, ROBOT_RADIUS)
+      e_rect_span = 2 * self.boundary_rect_angle(center_d, ROBOT_WIDTH)
+      e_rect_lidar = 2 * self.boundary_rect_angle(center_d, 2 * LIDAR_RADIUS)
+      e_rect_lidar_p = 2 * self.boundary_rect_angle(center_d, 2 * (LIDAR_RADIUS+lidar_radius_fuzz))
 
-      # print("CENTER D", center_d)
-      # print("A SPAN", a_span)
-      # print("E SPAN", e_span)
-      # print("E SPAN LIDAR", e_span_lidar)
-      # print("E RECT SPAN", e_rect_span)
-      # print("E SPAN LIDAR P", e_span_lidar_p)
-      # print("E RECT LIDAR", e_rect_lidar)
-      # print("E RECT LIDAR", e_rect_lidar_p)
-      # print()
+      print("CENTER D", center_d)
+      print("A SPAN", a_span)
+      print("E SPAN", e_span)
+      print("E SPAN LIDAR", e_span_lidar)
+      print("E RECT SPAN", e_rect_span)
+      print("E SPAN LIDAR P", e_span_lidar_p)
+      print("E RECT LIDAR", e_rect_lidar)
+      print("E RECT LIDAR", e_rect_lidar_p)
+      print()
 
       # if np.abs(a_span - e_span_lidar) > 3 * increment:
       if a_span < e_span_lidar or a_span > e_span_lidar_p:
-        # print("PURGING CLUSTER (1)")
-        # for c in cl_k:
-        #   print("\t ", c)
-        # n_cl -= 1
+        print("PURGING CLUSTER (1) AS OBSTACLE")
+        for c in cl_k:
+          print("\t ", c)
+        obstacles.append(cl_k)
         continue
-      # else:
-      #   print("KEEPING CLUSTER (1)")
-      #   for c in cl_k:
-      #     print("\t ", c)
+      else:
+        print("KEEPING CLUSTER (1)")
+        for c in cl_k:
+          print("\t ", c)
 
       # size of cluster is close to robot. Now check that points are circular using Internal Angle Variance (IAV)
       cart_cl_k = [np.array([dist * np.cos(ang), dist * np.sin(ang)]) for (dist, ang) in cl_k]
@@ -299,9 +304,10 @@ class SimpleLaser(object):
       # print("ANGLES STD", std)
 
       if mean < shape_mean_min or mean > shape_mean_max or std > shape_std:
-        # print("PURGING CLUSTER (2)", cl_k)
-        # for c in cl_k:
-        #   print("\t ", c)
+        print("PURGING CLUSTER (2) AS OBSTACLE")
+        for c in cl_k:
+          print("\t ", c)
+        obstacles.append(cl_k)
         continue
 
       f_cl.append(cl_k)
@@ -318,7 +324,10 @@ class SimpleLaser(object):
 
       robots.append((r, theta))
 
-    return robots
+    result[LIDAR_ROBOTS] = robots
+    result[LIDAR_OBSTACLES] = obstacles
+
+    return result
 
 
 class SLAM(object):
@@ -708,17 +717,24 @@ def run():
     vel_msg_l = Twist()
     vel_msg_l.linear.x = np.clip(u, -max_speed, max_speed)
     vel_msg_l.angular.z = np.clip(w, -max_speed, max_speed)
-    l_publisher.publish(vel_msg_l)
+    # l_publisher.publish(vel_msg_l)
+    l_publisher.publish(stop_msg)
 
     print()
     print("LEADER: FINDING ROBOTS")
-    lrs = leader_laser.find_robots()
+    l_res = leader_laser.cluster_environment()
+    lrs = l_res[LIDAR_ROBOTS]
+    lobs = l_res[LIDAR_OBSTACLES]
     print()
     print("FOLLOWER1: FINDING ROBOTS")
-    f1rs = follower_lasers[0].find_robots()
+    f1_res = follower_lasers[0].cluster_environment()
+    f1rs = f1_res[LIDAR_ROBOTS]
+    f1obs = f1_res[LIDAR_OBSTACLES]
     print()
     print("FOLLOWER2: FINDING ROBOTS")
-    f2rs = follower_lasers[1].find_robots()
+    f2_res = follower_lasers[1].cluster_environment()
+    f2rs = f2_res[LIDAR_ROBOTS]
+    f2obs = f2_res[LIDAR_OBSTACLES]
 
     print()
     print("ROBOTS FROM LEADER PERSPECTIVE:", lrs)
@@ -748,7 +764,8 @@ def run():
     velocities = control.basic(max_speed, max_angular)
 
     for i, f_publisher in enumerate(f_publishers):
-      f_publisher.publish(velocities[i])
+      # f_publisher.publish(velocities[i])
+      f_publisher.publish(stop_msg)
 
     rate_limiter.sleep()
 
