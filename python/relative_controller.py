@@ -665,7 +665,7 @@ speed_coefficient = 1.
 def run():
   global zs_desired
   global speed_coefficient
-  
+
   rospy.init_node('robot_controller')
   rate_limiter = rospy.Rate(ROSPY_RATE)
 
@@ -675,8 +675,7 @@ def run():
     f_publishers[i] = rospy.Publisher('/' + follower + '/cmd_vel', Twist, queue_size=5)
 
   leader_laser = SimpleLaser(LEADER, True)
-  follower_lasers = [SimpleLaser(FOLLOWER_1),
-                     SimpleLaser(FOLLOWER_2)]
+  follower_lasers = [SimpleLaser(FOLLOWER_1), SimpleLaser(FOLLOWER_2)]
 
   stop_msg = Twist()
   stop_msg.linear.x = 0.
@@ -731,9 +730,6 @@ def run():
     # if the robots can't see eachother (with the leader seeing at least one follower)
     if not (len(lrs) > 0 and ((len(f1rs) > 0 and len(f2rs) > 1) or (len(f2rs) > 0 and len(f1rs) > 1))):
       speed_coefficient = np.abs(speed_coefficient) * 0.95
-      stop_msg = Twist()
-      stop_msg.linear.x = 0.
-      stop_msg.angular.z = 0.
       f_publishers[0].publish(stop_msg)
       f_publishers[1].publish(stop_msg)
       rate_limiter.sleep()
@@ -741,7 +737,7 @@ def run():
     else:
       speed_coefficient = 1.
 
-    # match the observed robot from the lidar to {leader, follower1, follower2}
+    # match the observed robots from the lidar to {leader, follower1, follower2}
     matcher = ThreeRobotMatcher(lrs, f1rs, f2rs)
     fps = matcher.followers
 
