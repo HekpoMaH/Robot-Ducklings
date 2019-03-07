@@ -717,8 +717,7 @@ def run():
     vel_msg_l = Twist()
     vel_msg_l.linear.x = np.clip(u, -max_speed, max_speed)
     vel_msg_l.angular.z = np.clip(w, -max_speed, max_speed)
-    # l_publisher.publish(vel_msg_l)
-    l_publisher.publish(stop_msg)
+    l_publisher.publish(vel_msg_l)
 
     print()
     print("LEADER: FINDING ROBOTS")
@@ -764,8 +763,7 @@ def run():
     velocities = control.basic(max_speed, max_angular)
 
     for i, f_publisher in enumerate(f_publishers):
-      # f_publisher.publish(velocities[i])
-      f_publisher.publish(stop_msg)
+      f_publisher.publish(velocities[i])
 
     rate_limiter.sleep()
 
