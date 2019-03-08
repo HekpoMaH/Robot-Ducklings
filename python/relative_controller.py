@@ -29,9 +29,13 @@ from nav_msgs.msg import Path
 from tf.transformations import euler_from_quaternion
 
 from sim import vector_length, get_alpha
+# for the leg tracker
+from people_msgs.msg import PositionMeasurementArray
 # that's just for prototyping
 import obstacle_avoidance
 import pprint
+
+import rrt_improved as rrt
 
 FREE = 0
 UNKNOWN = 1
@@ -41,6 +45,7 @@ ROBOT_RADIUS = 0.105
 INTER_WHEEL_RADIUS = 0.8
 ROBOT_WIDTH = 0.16
 LIDAR_RADIUS = 0.035
+EPSILON = .1
 
 ROSPY_RATE = 50
 
@@ -337,18 +342,90 @@ class SimpleLaser(object):
 
     return result
 
+class LegDetector(object):
+  def __init__(self, slam):
+    rospy.Subscriber('/leg_tracker_measurements', PositionMeasurementArray, self.callback)
+    self._position = np.array([np.nan, np.nan], dtype=np.float32)
+    self._slam = slam
+
+  def callback(self, msg):
+    # The pose from RViz is with respect to the "map".
+
+    if not self._slam.ready:
+        return
+
+    f_pose = [None, None]
+    f_pose[0] = self._slam.get_pose(FOLLOWERS[0])
+    f_pose[1] = self._slam.get_pose(FOLLOWERS[1])
+    print('msg is', msg)
+    # if it is tagged then it is not a person, but a robot
+    tags = [False] * len(msg.people) 
+    for follower_pos in f_pose:
+        min_idx = -1
+        min_len = 1e9
+        for i, person in enumerate(msg.people):
+            person_pos = np.array([person.pos.x, person.pos.y])
+            if vector_length(person_pos-follower_pos[:2]) < min_len:
+                min_idx = i
+                min_len = vector_length(person_pos-follower_pos[:2])
+
+        if len(msg.people) != 0:
+            tags[min_idx] = True
+
+    highest_reliability = -1e9
+    highest_reliable_person = None
+    for i, person in enumerate(msg.people):
+
+        if tags[i] == True:
+            continue
+
+        if person.reliability > highest_reliability:
+            highest_reliable_person = person
+            highest_reliability = person.reliability
+
+    if highest_reliable_person is None:
+        return
+
+    x = highest_reliable_person.pos.x
+    y = highest_reliable_person.pos.y
+    
+    # Sometimes this is a bit off
+    # print("\t This is assumed to be the person")
+    # print("\t X", x)
+    # print("\t Y", y)
+    # print()
+
+    self._position[X] = x
+    self._position[Y] = y
+
+  @property
+  def ready(self):
+    return not np.isnan(self._position[0])
+
+  @property
+  def position(self):
+    return self._position
 
 class SLAM(object):
   def __init__(self):
-    rospy.Subscriber('/map', OccupancyGrid, self.callback)
+    rospy.Subscriber('/tb3_0/map', OccupancyGrid, self.callback)
     self._tf = TransformListener()
     self._occupancy_grid = None
     self._pose = np.array([np.nan, np.nan, np.nan], dtype=np.float32)
 
   def callback(self, msg):
-    pass
+    print("SLAM CALLBACK CALLED")
+    values = np.array(msg.data, dtype=np.int8).reshape((msg.info.width, msg.info.height))
+    processed = np.empty_like(values)
+    processed[:] = rrt.FREE
+    processed[values < 0] = rrt.UNKNOWN
+    processed[values > 50] = rrt.OCCUPIED
+    processed = processed.T
+    origin = [msg.info.origin.position.x, msg.info.origin.position.y, 0.]
+    resolution = msg.info.resolution
+    self._occupancy_grid = rrt.OccupancyGrid(processed, origin, resolution)
 
-  def update(self):
+  def print_poses(self):
     # Get pose w.r.t. map.
     r0_pose = self.get_pose(LEADER)
     r1_pose = self.get_pose(FOLLOWERS[0])
@@ -376,6 +453,22 @@ class SLAM(object):
     print()
     print()
     print()
+
+  def update(self, robot):
+    # Get pose w.r.t. map.
+    a = 'occupancy_grid'
+    b = robot + '/base_link'
+    if self._tf.frameExists(a) and self._tf.frameExists(b):
+      try:
+        t = rospy.Time(0)
+        position, orientation = self._tf.lookupTransform('/' + a, '/' + b, t)
+        self._pose[X] = position[X]
+        self._pose[Y] = position[Y]
+        _, _, self._pose[YAW] = euler_from_quaternion(orientation)
+      except Exception as e:
+        print(e)
+    else:
+      print('Unable to find:', self._tf.frameExists(a), self._tf.frameExists(b))
 
   def get_pose(self, robot):
     a = 'occupancy_grid'
@@ -606,6 +699,12 @@ class ThreeRobotMatcher(object):
   def followers(self):
     return self._followers
 
+def feedback_linearized(pose, velocity, epsilon):
+
+  u = velocity[X] * np.cos(pose[YAW]) + velocity[Y] * np.sin(pose[YAW])
+  w = (1 / epsilon) * (-velocity[X] * np.sin(pose[YAW]) + velocity[Y] * np.cos(pose[YAW]))
+
+  return u, w
 
 class RobotControl(object):
 
@@ -794,14 +893,6 @@ class RobotControl(object):
       v = cap(v, max_speed)
       return v
 
-    def feedback_linearized(pose, velocity, epsilon):
-      #Always relative to itself
-
-      u = velocity[X] * np.cos(pose[YAW]) + velocity[Y] * np.sin(pose[YAW])
-      w = (1 / epsilon) * (-velocity[X] * np.sin(pose[YAW]) + velocity[Y] * np.cos(pose[YAW]))
-
-      return u, w
-
     def get_potential_speed(pose, measurements, angles):
       tot = np.array([0., 0.])
       # could probably be done in 1 call instead of iterating, but for now, it's acceptable
@@ -852,6 +943,148 @@ extra_psis = [3.*np.math.pi/4., 5*np.math.pi/4.]
 
 speed_coefficient = 1.
 
+def get_velocity(position, path_points):
+  v = np.zeros_like(position)
+  if len(path_points) == 0:
+    return v
+  # Stop moving if the goal is reached.
+  if np.linalg.norm(position - path_points[-1]) < .2:
+    return v
+
+  """
+    This uses the path finding algorithm developed by Craig Reynolds in his paper
+    https://www.red3d.com/cwr/papers/1999/gdc99steer.pdf
+
+    The algorithm has been slightly modified as the current velocity is not given and in the original algorithm it is 
+    needed to predict the future location of the robot. I use the current position in all places where Reynolds uses
+    the future position. The algorithm still performs well. When the robot deviates from the path, it corrects with a 
+    velocity proportional to its deviation. 
+
+    An outline of the algorithm is given below:  
+
+    step 1: Find the closest point, cp, on the path to the robots position, p
+
+    step 2: Determine a target point, tp, a fixed distance ahead of cp on the path
+
+    step 3: If distance(cp - p) is greater than the radius of the path, move the robot towards the target point. If not,
+    move the robot parallel to the segment which contains tp. 
+
+  """
+
+  segment_size = 0.05  # a segment spans 5cm
+  radius = 0.02  # the max distance either side of the path before the robot corrects
+  velocity_scale = SPEED  # scales the forward velocity (when not correcting)
+  target_offset = segment_size * 0.2  # distance of target point ahead of the closest point to robot on path
+  correction_scale = 10  # scales the correcting velocity
+  correction_min = 1 * velocity_scale  # minimum correcting velocity
+  correction_max = 2 * velocity_scale  # maximum correcting velocity
+
+  def magnitude(v):
+    return np.linalg.norm(v)
+
+  def get_normal(point, a, b):
+    ab_norm = (b - a) / magnitude(b - a)
+    return a + np.dot(ab_norm, point - a) * ab_norm
+
+  def point_in_segment(point, a, b):
+    eps = 0.0001
+    d = magnitude(point - a) + magnitude(point - b) - magnitude(a - b)
+    return -eps < d or eps > d
+
+  def truncate_vector(v, min, max):
+    mag = magnitude(v)
+    if mag < min:
+      return min * v / mag
+    if mag > max:
+      return max * v / mag
+    return v
+
+  closest_point = None
+  target_point = None
+  target_segment = None
+  min_dist = np.inf
+
+  for i in range(len(path_points) - 2):
+    a = path_points[i]
+    b = path_points[i + 1]
+    c = path_points[i + 2]
+
+    normal_point = get_normal(position, a, b)
+    norm_in_segment = point_in_segment(normal_point, a, b)
+
+    if not norm_in_segment:
+      normal_point = b
+
+    # distance between the normal point and the position of the robot
+    dist = magnitude(position - normal_point)
+
+    # evaluate if smallest distance so far
+    if dist < min_dist:
+
+      min_dist = dist
+      closest_point = normal_point
+
+      # calculate distance to end of segment
+      segment_distance_left = magnitude(b - closest_point)
+
+      # if distance to end of segment is less than distance from closest point to target point, target in next segment
+      if segment_distance_left < target_offset:
+        target_point = (target_offset - segment_distance_left) * (c - b) / magnitude(c - b)
+        target_segment = c - b
+      else:
+        target_point = target_offset * (b - a) / magnitude(b - a)
+        target_segment = b - a
+
+  # get the vector and distance between the robots position and closest point on the path
+  cp_dir = closest_point - position
+  cp_dist = magnitude(cp_dir)
+
+  # if robot is outside of radius of path, move towards target point
+  if cp_dist > radius:
+    v = truncate_vector(correction_scale * target_point, correction_min, correction_max)
+  else:  # otherwise move parallel to the target_segment
+    v = velocity_scale * target_segment / magnitude(target_segment)
+
+  return v
+
+def get_path(final_node):
+  # Construct path from RRT solution.
+  if final_node is None:
+    return []
+  path_reversed = []
+  path_reversed.append(final_node)
+  while path_reversed[-1].parent is not None:
+    path_reversed.append(path_reversed[-1].parent)
+  path = list(reversed(path_reversed))
+  # Put a point every 5 cm.
+  distance = 0.05
+  offset = 0.
+  points_x = []
+  points_y = []
+  for u, v in zip(path, path[1:]):
+    center, radius = rrt.find_circle(u, v)
+    du = u.position - center
+    theta1 = np.arctan2(du[1], du[0])
+    dv = v.position - center
+    theta2 = np.arctan2(dv[1], dv[0])
+    # Check if the arc goes clockwise.
+    clockwise = np.cross(u.direction, du).item() > 0.
+    # Generate a point every 5cm apart.
+    da = distance / radius
+    offset_a = offset / radius
+    if clockwise:
+      da = -da
+      offset_a = -offset_a
+      if theta2 > theta1:
+        theta2 -= 2. * np.pi
+    else:
+      if theta2 < theta1:
+        theta2 += 2. * np.pi
+    angles = np.arange(theta1 + offset_a, theta2, da)
+    offset = distance - (theta2 - angles[-1]) * radius
+    points_x.extend(center[X] + np.cos(angles) * radius)
+    points_y.extend(center[Y] + np.sin(angles) * radius)
+    return zip(points_x, points_y)
 
 def run():
   global zs_desired
@@ -860,10 +1093,16 @@ def run():
   rospy.init_node('robot_controller')
   rate_limiter = rospy.Rate(ROSPY_RATE)
 
+  path_publisher = rospy.Publisher('/path', Path, queue_size=1)
   l_publisher = rospy.Publisher('/' + LEADER + '/cmd_vel', Twist, queue_size=5)
   f_publishers = [None] * len(FOLLOWERS)
   for i, follower in enumerate(FOLLOWERS):
     f_publishers[i] = rospy.Publisher('/' + follower + '/cmd_vel', Twist, queue_size=5)
+
+  slam = SLAM()
+  leg_detector = LegDetector(slam)
+  frame_id = 0
+  current_path = []
 
   leader_laser = SimpleLaser(LEADER, True)
   follower_lasers = [SimpleLaser(FOLLOWER_1), SimpleLaser(FOLLOWER_2)]
@@ -872,6 +1111,7 @@ def run():
   stop_msg.linear.x = 0.
   stop_msg.angular.z = 0.
 
+  previous_time = rospy.Time.now().to_sec()
   # Make sure the robot is stopped.
   i = 0
   while i < 10 and not rospy.is_shutdown():
@@ -886,17 +1126,101 @@ def run():
   max_angular = 0.06
 
   while not rospy.is_shutdown():
-    if not leader_laser.ready:
+    if not leader_laser.ready or not leg_detector.ready:
+      print('laser', leader_laser.ready, 'leg', leg_detector.ready)
       rate_limiter.sleep()
       continue
 
+    if not slam.ready:
+      print('slam', slam.ready)
+      rate_limiter.sleep()
+      continue
+
+    # chance of this happening if map-merge has not converged yet (or maybe some other reason)
+    current_time = rospy.Time.now().to_sec()
+    leader_pose = slam.get_pose(LEADER)
+    if leader_pose is None:
+      print('map mis-merge')
+      rate_limiter.sleep
+      continue
+
+    goal_reached = np.linalg.norm(leader_pose[:2] - leg_detector.position) < .002
+    if goal_reached:
+      print("GOAL REACHED")
+      l_publisher.publish(stop_msg)
+      f_publishers[0].publish(stop_msg)
+      f_publishers[1].publish(stop_msg)
+      rate_limiter.sleep()
+      continue
     # print('measurments', leader_laser.measurements)
     # u, w = rule_based(*leader_laser.measurements)
-    u, w = obstacle_avoidance.braitenberg(*leader_laser.measurements)
-    u *= speed_coefficient * 0.25
-    w *= speed_coefficient * 0.25
-    print('vels', u, w)
+
+    # Follow path using feedback linearization.
+    position = np.array([
+      leader_pose[X] + EPSILON * np.cos(leader_pose[YAW]),
+      leader_pose[Y] + EPSILON * np.sin(leader_pose[YAW])], dtype=np.float32)
+    v = get_velocity(position, np.array(current_path, dtype=np.float32))
+    u, w = feedback_linearized(leader_pose, v, epsilon=EPSILON)
     vel_msg_l = Twist()
+    # TODO FIX These below
+    vel_msg_l.linear.x = u
+    vel_msg_l.angular.z = w
+    print("LEADER VeL MSG", vel_msg_l)
+    l_publisher.publish(vel_msg_l)
+
+
+
+    # Update plan every 1s.
+    time_since = current_time - previous_time
+    if current_path and time_since < 2.:
+      rate_limiter.sleep()
+      continue
+    previous_time = current_time
+
+    def find_free_close(pos):
+      rand = np.random.rand(2)
+      pos = leg_detector.position + rand
+      while not slam.occupancy_grid.is_free(pos):
+        rand = np.random.rand(2)
+        pos = leg_detector.position + rand
+
+      return pos
+
+
+    g_pos = find_free_close(leg_detector.position)
+
+    # Run RRT.
+    # positionnn = np.random.rand(2)*4-2
+    # print(leg_detector.position)
+    print("GPOS", g_pos)
+    start_node, final_node = rrt.rrt(leader_pose, g_pos, slam.occupancy_grid)
+
+
+    current_path = get_path(final_node)
+
+    # Publish path to RViz.
+    path_msg = Path()
+    path_msg.header.seq = frame_id
+    path_msg.header.stamp = rospy.Time.now()
+    path_msg.header.frame_id = 'map'
+    for u in current_path:
+      pose_msg = PoseStamped()
+      pose_msg.header.seq = frame_id
+      pose_msg.header.stamp = path_msg.header.stamp
+      pose_msg.header.frame_id = 'map'
+      pose_msg.pose.position.x = u[X]
+      pose_msg.pose.position.y = u[Y]
+      path_msg.poses.append(pose_msg)
+    path_publisher.publish(path_msg)
+
+    # rate_limiter.sleep()
+    frame_id += 1
+    # TODO remove commented out codes
+    # u, w = obstacle_avoidance.braitenberg(*leader_laser.measurements)
+    # u *= speed_coefficient * 0.25
+    # w *= speed_coefficient * 0.25
+    # print('vels', u, w)
+    # vel_msg_l = Twist()
     vel_msg_l.linear.x = np.clip(u, -max_speed, max_speed)
     vel_msg_l.angular.z = np.clip(w, -max_speed, max_speed)
     l_publisher.publish(vel_msg_l)
