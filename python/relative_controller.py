@@ -735,6 +735,11 @@ class RobotControl(object):
       beta = np.pi + fl[1] - lf[1]
       gamma = beta + z[1]
 
+      print("z[0] l_12", z[0])
+      print("z[1] psi_ij", z[1])
+      print("b_12", beta)
+      print("g_12", gamma)
+
       G = np.array([[np.cos(gamma), d * np.sin(gamma)],
                     [-np.sin(gamma) / z[0], d * np.cos(gamma) / z[0]]])
       F = np.array([[-np.cos(z[1]), 0],
@@ -771,8 +776,9 @@ class RobotControl(object):
 
     # theta leader to f1
     z[1] = lf1[1]
-    # if z[1] < 0.:
-    #     z[1] += 2*np.math.pi
+
+    if z[1] < 0.:
+        z[1] += 2*np.math.pi
 
     # r f2 to leader
     z[2] = f2l[0]
@@ -784,14 +790,16 @@ class RobotControl(object):
     print("f1 <--true--> f2", ff12[0][0], ff12[1][0])
 
     # r f1 to leader
-    inner_ang = np.abs(lf1[1] - lf2[1])
-    if inner_ang > np.pi:
-      inner_ang = 2 * np.pi - inner_ang
-
-    print("f1 - l - f2 ang", inner_ang)
+    # inner_ang = np.abs(lf1[1] - lf2[1])
+    # if inner_ang > np.pi:
+    #   inner_ang = 2 * np.pi - inner_ang
+    #
+    # print("f1 - l - f2 ang", inner_ang)
 
     # cosine rule
-    z[3] = np.sqrt(np.square(z[0]) + np.square(z[2]) - 2 * z[0] * z[2] * np.cos(inner_ang))
+    # z[3] = np.sqrt(np.square(z[0]) + np.square(z[2]) - 2 * z[0] * z[2] * np.cos(inner_ang))
+    # z[3] = (ff12[0][0] + ff12[1][0]) / 2
+    z[3] = ff12[0][0]
 
     print("f1 <--> f2", z[3])
 
@@ -800,91 +808,70 @@ class RobotControl(object):
     print("f2l[1]", f2l[1])
     print("lf2[1]", lf2[1])
 
-    print("b_12", np.pi + f1l[1] - lf1[1])
-    print("b_13", np.pi + f2l[1] - lf2[1])
+    psi_12 = z[1]
+    psi_13 = lf2[1]
+    psi_23 = ff12[0][1]
 
-    g_12 = np.pi + (f1l[1] - lf1[1] + lf1[1])
-    g_13 = np.pi + (f2l[1] - lf2[1] + lf2[1])
+    b_12 = np.pi + (f1l[1] - lf1[1])
+    b_13 = np.pi + (f2l[1] - lf2[1])
+    b_23 = np.pi + ff12[0][1] - ff12[1][1]
 
-    # sine rule
-    a1 = np.arcsin(z[2] * np.sin(inner_ang) / z[3])
-    a2 = np.arcsin(z[0] * np.sin(inner_ang) / z[3])
+    g_12 = b_12 + z[1]
+    g_13 = b_13 + lf2[1]
+    g_23 = b_23 + ff12[1][1]
 
-    print("a1", a1)
-    print("a2", a2)
-    print("b_23 pred", np.pi + ((np.abs(f1l[1]) + a1) - (f2l[1] - a2)))
+    print()
+    print("z[0] l_12", z[0])
+    print("z[1] psi_12", z[1])
+    print("z[2] l_13", z[2])
+    print("z[3] l_23", z[3])
+    print("b_12", b_12)
+    print("b_13", b_13)
+    print("b_23", b_23)
+    print("psi_23", ff12[0][1])
+    print("psi_32", ff12[1][1])
 
-    b_23_t = np.pi + ff12[0][1] - ff12[1][1]
-    print("b_23 true", b_23_t)
-
-    fl1 = f1l[1]
-    fl2 = f2l[1]
-
-    if fl1 < 0:
-      fl1 = fl1 + 2 * np.pi
-
-    if fl2 < 0:
-      fl2 = fl2 + 2 * np.pi
-
-    # TODO: work out how to do this properly
-    # maybe sum relative betas to leader
-    # g_23 = np.pi + (((2 * np.pi - fl1) + a1))  # - (2 * np.pi - (f2l[1] + a2)) + (f2l[1] - a2))
-    g_23 = np.pi + ff12[0][1] - ff12[1][1] + ff12[1][1]
-
-    gammas = [g_12, g_13, g_23]
-
-    # initially I used this, but the outliers...
-    # for rob in f1rs:
-    #     diff = abs(rob[0]-z[0])
-    #     # more than 10% difference wrt the measurement
-    #     if diff/rob[0] > 0.1:
-    #         # r f1 to f2
-    #         z[3] = rob[0]
-    #         break
-    # else:
-    #     # if it's < 10% doesn't matter who we pick
-    #     z[3] = f1rs[0][0]
-
-    # cosine becomes with too many cases...
-
-    speed_follower = [0., 0., 0., 0.]
-    # using the same logic
-    # lf = self._followers[0][0]
-    # fl = self._followers[0][1]
-    #
-    # #  g12
-    # gammas = [np.pi + fl[1] - lf[1] + z[1]]
-    #
-    # lf = self._followers[1][0]
-    # fl = self._followers[1][1]
-    # #             g13
-    # gammas.append(np.pi + fl[1] - lf[1] + extra_psis[0])
-
-    #             g23
-    # TODO Get gamma23 to be right, yep, the below does definitely not work
-    # gammas.append(fl[1] - lf[1] - (self._followers[0][1][1] - self._followers[0][0][1]) + extra_psis[1])
 
     d = 0.05
-    G = np.array([[np.cos(gammas[0]), d * np.sin(gammas[0]), 0, 0],
-                  [-np.sin(gammas[0]) / z[0], d * np.cos(gammas[0]) / z[0], 0, 0],
-                  [0, 0, np.cos(gammas[1]), d * np.sin(gammas[1])],
-                  [0, 0, np.cos(gammas[2]), d * np.sin(gammas[2])]])
+    G = np.array([[np.cos(g_12), d * np.sin(g_12), 0, 0],
+                  [-np.sin(g_12) / z[0], d * np.cos(g_12) / z[0], 0, 0],
+                  [0, 0, np.cos(g_13), d * np.sin(g_13)],
+                  [-np.cos(psi_23), 0, np.cos(g_23), d * np.sin(g_23)]])
+
     F = np.array([[-np.cos(z[1]), 0],
                   [np.sin(z[1]) / z[0], -1],
-                  [-np.cos(extra_psis[0]), 0],
+                  [-np.cos(psi_13), 0],
                   [0, 0]])
 
-    k = np.array([0.45, 0.24, 0.45, 0.45])
-    print('\t zs', z, ' <-> ', zs_both_desired)
-    p = k * (zs_both_desired - z)
+    z1 = self._desired_pose[FOLLOWERS[0]]
+    z2 = self._desired_pose[FOLLOWERS[1]]
+    z1_coord = ThreeRobotMatcher.pol2cart(*z1)
+    z2_coord = ThreeRobotMatcher.pol2cart(*z2)
+    z12_coord = -z1_coord + z2_coord
+    z12 = ThreeRobotMatcher.cart2pol(*z12_coord)
+
+    l_arr = np.array([z2[0], z12[0]])
+
+    zd = np.concatenate((self._desired_pose[FOLLOWERS[0]], l_arr), axis=0)
+
+    k = np.array([0.45, 0.23, 0.45, 0.45])
+    print('\t z_desired', zd)
+    print("\t z_current", z)
+    print("\t z_diff", zd - z)
+    p = k * (zd - z)
 
     speed_robot = np.array([self._leader_vel.linear.x, self._leader_vel.angular.z])
     speed_followers = np.matmul(np.linalg.inv(G), (p - np.matmul(F, speed_robot)))
 
+    print("\t p", p)
+    print("\t speed_followers")
+    for f in speed_followers:
+      print("\t\t",f)
+
     vel_msgs = []
     vel_msg = Twist()
 
-    speed_coeff = 2
+    speed_coeff = 5
     angular_coeff = 3
     vel_msg.linear.x = np.clip(speed_followers[0], -max_speed * speed_coeff, max_speed * speed_coeff)
     vel_msg.angular.z = np.clip(speed_followers[1], -max_angular * angular_coeff, max_angular * angular_coeff)
@@ -991,10 +978,10 @@ class RobotControl(object):
     pass
 
 zs_desired = {FOLLOWERS[0]: np.array([0.5, 3.*np.math.pi/4.]),
-              FOLLOWERS[1]: np.array([0.5, 5.*np.math.pi/4.])}
+              FOLLOWERS[1]: np.array([1.2, 5.*np.math.pi/4.])}
 # right triangle, two sides 0.4
 #                  l12,  psi12          , l13,   l23
-zs_both_desired = [0.4, 5.*np.math.pi/4., 0.4, np.sqrt(0.32)]
+# zs_both_desired = [zs_desired[FOLLOWERS[0]], zs_desired[FOLLOWERS[1]]]
 #              psi13,            psi23
 extra_psis = [3.*np.math.pi/4., 5*np.math.pi/4.]
 
@@ -1143,7 +1130,7 @@ def get_path(final_node):
     points_y.extend(center[Y] + np.sin(angles) * radius)
     return zip(points_x, points_y)
 
-STOP = True
+STOP = False
 
 def run():
   global zs_desired
@@ -1436,6 +1423,7 @@ def run2():
     # ffs indicate that the two followers can see each other
     if ffs is not None:
       velocities = control.three_robot(max_speed, max_angular, ffs)
+      # velocities = control.basic(max_speed, max_angular)
     else:
       velocities = control.basic(max_speed, max_angular)
 
