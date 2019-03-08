@@ -344,41 +344,41 @@ class SimpleLaser(object):
     return result
 
 class LegDetector(object):
-  def __init__(self, slam):
+  def __init__(self):
     rospy.Subscriber('/leg_tracker_measurements', PositionMeasurementArray, self.callback)
     self._position = np.array([np.nan, np.nan], dtype=np.float32)
-    self._slam = slam
+    # self._slam = slam
 
   def callback(self, msg):
     # The pose from RViz is with respect to the "map".
 
-    if not self._slam.ready:
-        return
+    # if not self._slam.ready:
+    #     return
 
-    f_pose = [None, None]
-    f_pose[0] = self._slam.get_pose(FOLLOWERS[0])
-    f_pose[1] = self._slam.get_pose(FOLLOWERS[1])
-    print('msg is', msg)
-    # if it is tagged then it is not a person, but a robot
-    tags = [False] * len(msg.people) 
-    for follower_pos in f_pose:
-        min_idx = -1
-        min_len = 1e9
-        for i, person in enumerate(msg.people):
-            person_pos = np.array([person.pos.x, person.pos.y])
-            if vector_length(person_pos-follower_pos[:2]) < min_len:
-                min_idx = i
-                min_len = vector_length(person_pos-follower_pos[:2])
+    # f_pose = [None, None]
+    # f_pose[0] = self._slam.get_pose(FOLLOWERS[0])
+    # f_pose[1] = self._slam.get_pose(FOLLOWERS[1])
+    # print('msg is', msg)
+    # # if it is tagged then it is not a person, but a robot
+    # tags = [False] * len(msg.people) 
+    # for follower_pos in f_pose:
+    #     min_idx = -1
+    #     min_len = 1e9
+    #     for i, person in enumerate(msg.people):
+    #         person_pos = np.array([person.pos.x, person.pos.y])
+    #         if vector_length(person_pos-follower_pos[:2]) < min_len:
+    #             min_idx = i
+    #             min_len = vector_length(person_pos-follower_pos[:2])
 
-        if len(msg.people) != 0:
-            tags[min_idx] = True
+    #     if len(msg.people) != 0:
+    #         tags[min_idx] = True
 
     highest_reliability = -1e9
     highest_reliable_person = None
     for i, person in enumerate(msg.people):
 
-        if tags[i] == True:
-            continue
+        # if tags[i] == True:
+        #     continue
 
         if person.reliability > highest_reliability:
             highest_reliable_person = person
@@ -412,7 +412,7 @@ class SLAM(object):
     rospy.Subscriber('/tb3_0/map', OccupancyGrid, self.callback)
     self._tf = TransformListener()
     self._occupancy_grid = None
-    self._pose = np.array([np.nan, np.nan, np.nan], dtype=np.float32)
+    self._pose = np.array([0., 0., 0.], dtype=np.float32)
 
   def callback(self, msg):
     print("SLAM CALLBACK CALLED")
@@ -491,6 +491,7 @@ class SLAM(object):
 
   @property
   def ready(self):
+    # print('ogrid', self._occupancy_grid, 'nan', np.isnan(self.pose[0]))
     return self._occupancy_grid is not None and not np.isnan(self._pose[0])
 
   @property
@@ -919,8 +920,8 @@ class RobotControl(object):
           tot += vec
 
       up, wp = feedback_linearized(pose, tot, .2)
-      up *= .08
-      wp *= .06
+      up *= .28
+      wp *= .26
       print('\t \t total', up, wp)
       return up, wp
 
@@ -984,6 +985,7 @@ def get_velocity(position, path_points):
 
   """
 
+  SPEED = .1
   segment_size = 0.05  # a segment spans 5cm
   radius = 0.02  # the max distance either side of the path before the robot corrects
   velocity_scale = SPEED  # scales the forward velocity (when not correcting)
@@ -1115,7 +1117,7 @@ def run():
     f_publishers[i] = rospy.Publisher('/' + follower + '/cmd_vel', Twist, queue_size=5)
 
   slam = SLAM()
-  leg_detector = LegDetector(slam)
+  leg_detector = LegDetector()
   frame_id = 0
   current_path = []
 
@@ -1155,8 +1157,7 @@ def run():
     current_time = rospy.Time.now().to_sec()
     leader_pose = slam.get_pose(LEADER)
     if leader_pose is None:
-      print('map mis-merge')
-      rate_limiter.sleep
+      rate_limiter.sleep()
       continue
 
     goal_reached = np.linalg.norm(leader_pose[:2] - leg_detector.position) < .002
@@ -1207,7 +1208,7 @@ def run():
     # Run RRT.
     # positionnn = np.random.rand(2)*4-2
     # print(leg_detector.position)
-    print("GPOS", g_pos)
+    print("Goal POS", g_pos, 'Leader POS', leader_pose)
     start_node, final_node = rrt.rrt(leader_pose, g_pos, slam.occupancy_grid)
 
 
@@ -1236,9 +1237,9 @@ def run():
     # w *= speed_coefficient * 0.25
     # print('vels', u, w)
     # vel_msg_l = Twist()
-    vel_msg_l.linear.x = np.clip(u, -max_speed, max_speed)
-    vel_msg_l.angular.z = np.clip(w, -max_speed, max_speed)
-    l_publisher.publish(vel_msg_l)
+    # vel_msg_l.linear.x = np.clip(u, -max_speed, max_speed)
+    # vel_msg_l.angular.z = np.clip(w, -max_speed, max_speed)
+    # l_publisher.publish(vel_msg_l)
 
     # print()
     # print("LEADER: FINDING ROBOTS")
@@ -1279,6 +1280,7 @@ def run():
     # match the observed robots from the lidar to {leader, follower1, follower2}
     matcher = ThreeRobotMatcher(lrs, f1rs, f2rs)
     fps = matcher.followers
+    print("Matched followers", fps)
 
     # initiate the control class
     control = RobotControl(fps, vel_msg_l, zs_desired)
