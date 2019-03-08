@@ -344,17 +344,20 @@ class SimpleLaser(object):
     return result
 
 class LegDetector(object):
-  def __init__(self):
+  def __init__(self, slam):
     rospy.Subscriber('/leg_tracker_measurements', PositionMeasurementArray, self.callback)
     self._position = np.array([np.nan, np.nan], dtype=np.float32)
-    # self._slam = slam
+    self._slam = slam
+    self.other_robots = []
 
   def callback(self, msg):
     # The pose from RViz is with respect to the "map".
 
-    # if not self._slam.ready:
-    #     return
+    if not self._slam.ready:
+        return
 
+    leader_pose = self._slam.get_pose(LEADER)
+    print(leader_pose)
     # f_pose = [None, None]
     # f_pose[0] = self._slam.get_pose(FOLLOWERS[0])
     # f_pose[1] = self._slam.get_pose(FOLLOWERS[1])
@@ -375,6 +378,26 @@ class LegDetector(object):
 
     highest_reliability = -1e9
     highest_reliable_person = None
+    # print("messages are", msg.people)
+    # This one below just discards the follower to leader (r,phi) TODO confirm that [0]th element of the followers is always coordinate of follower relative to leader
+    relative_coords = [relative_coord[0] for relative_coord in self.other_robots]
+    print("other robots are", relative_coords)
+
+    robots_in_slam_coords = [
+                      # TODO If I didn't get the geometry wrong (50% chance), these should give coordinate of followers in global
+            np.array([leader_pose[X] + relative_coord[0]*np.cos(leader_pose[YAW]+relative_coord[1]),
+                      leader_pose[Y] + relative_coord[0]*np.sin(leader_pose[YAW]+relative_coord[1])])
+            for relative_coord in relative_coords]
+
+    print("leader in SLAM", leader_pose)
+    print("robots in SLAM", robots_in_slam_coords)
+
+    print("distances to each detected leg")
+    for j, robots in enumerate(robots_in_slam_coords):
+        print("\tROBO", j)
+        for i, person in enumerate(msg.people):
+            print("\t\t ", i, "->", vector_length(robots-np.array([person.pos.x, person.pos.y])))
+
     for i, person in enumerate(msg.people):
 
         # if tags[i] == True:
@@ -406,6 +429,10 @@ class LegDetector(object):
   @property
   def position(self):
     return self._position
+
+  # @other_robots.setter
+  def set_other_robots(self, other_robots):
+    self.other_robots = other_robots
 
 class SLAM(object):
   def __init__(self):
@@ -661,15 +688,15 @@ class ThreeRobotMatcher(object):
       # for f in followers:
       #   print("\t", f)
 
-      print("FORWARD")
+      # print("FORWARD")
 
     self._followers = followers
-    print("FOLLOWERS")
-    for i, f in enumerate(followers):
-      print("\t", i, f)
+    # print("FOLLOWERS")
+    # for i, f in enumerate(followers):
+      # print("\t", i, f)
 
-    if self._ff is not None:
-      print("\t FF", self._ff)
+    # if self._ff is not None:
+    #   print("\t FF", self._ff)
 
     print()
 
@@ -1145,7 +1172,7 @@ def get_path(final_node):
     points_y.extend(center[Y] + np.sin(angles) * radius)
     return zip(points_x, points_y)
 
-STOP = True
+STOP = False
 
 def run():
   global zs_desired
@@ -1161,7 +1188,7 @@ def run():
     f_publishers[i] = rospy.Publisher('/' + follower + '/cmd_vel', Twist, queue_size=5)
 
   slam = SLAM()
-  leg_detector = LegDetector()
+  leg_detector = LegDetector(slam)
   frame_id = 0
   current_path = []
 
@@ -1223,9 +1250,10 @@ def run():
     u, w = feedback_linearized(leader_pose, v, epsilon=EPSILON)
     vel_msg_l = Twist()
     # TODO FIX These below
-    vel_msg_l.linear.x = u
+    vel_msg_l.linear.x = 3*u
     vel_msg_l.angular.z = w
     print("LEADER VeL MSG", vel_msg_l)
+    print("STOP?", STOP)
     l_publisher.publish(vel_msg_l) if not STOP else l_publisher.publish(stop_msg)
 
 
@@ -1325,6 +1353,7 @@ def run():
     matcher = ThreeRobotMatcher(lrs, f1rs, f2rs)
     fps = matcher.followers
     print("Matched followers", fps)
+    leg_detector.set_other_robots(fps)
 
     # initiate the control class
     control = RobotControl(fps, vel_msg_l, zs_desired)
@@ -1447,4 +1476,4 @@ def run2():
     rate_limiter.sleep()
 
 if __name__ == '__main__':
-  run2()
+  run()
