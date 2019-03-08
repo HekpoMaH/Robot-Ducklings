@@ -34,6 +34,7 @@ from people_msgs.msg import PositionMeasurementArray
 # that's just for prototyping
 import obstacle_avoidance
 import pprint
+import itertools
 
 import rrt_improved as rrt
 
@@ -508,6 +509,7 @@ class ThreeRobotMatcher(object):
     self._frs = [f1_set, f2_set]
     self._mfrs = []
     self._followers = []
+    self._ff = None
 
     for i, set in enumerate(self._frs):
       for r in set:
@@ -536,7 +538,8 @@ class ThreeRobotMatcher(object):
       # matches = self._find_matches(self._lrs[0], self._mfrs)
       # match is (f_index, diff, fr, lrs[0])
 
-      middle_f, lower_f = ((0, self._frs[0]), (1, self._frs[1])) if len(self._frs[0]) > 1 else ((1, self._frs[1]), (0, self._frs[0]))
+      middle_f, lower_f = ((0, self._frs[0]), (1, self._frs[1])) if len(self._frs[0]) > 1 else (
+      (1, self._frs[1]), (0, self._frs[0]))
       middle_f = [(middle_f[0], r) for r in middle_f[1]]
       lower_f = [(lower_f[0], r) for r in lower_f[1]]
 
@@ -563,6 +566,8 @@ class ThreeRobotMatcher(object):
       other_f = [m for (f_i, m) in middle_f if m != middle_match[2]][0]
       other_ff = lower_f[0][1]
 
+      # TODO: fix this as coordinate axis are different for each robot
+
       of_cart = self.pol2cart(*other_f)
       off_cart = self.pol2cart(*other_ff)
 
@@ -578,107 +583,58 @@ class ThreeRobotMatcher(object):
 
     else:  # leader can see both followersss
 
-      f1_set = []
-      f2_set = []
+      permutations = list(itertools.product(self._mfrs, self._lrs))
+      f1_perms = [m for m in permutations if m[0][0] == 0]
+      f2_perms = [m for m in permutations if m[0][0] == 1]
+      nperms = list(itertools.product(f1_perms, f2_perms))
+      fperms = list(itertools.product(self._frs[0], self._frs[1]))
+      cperms = list(itertools.product(nperms, fperms))
 
-      # for i, lr in enumerate(self._lrs):
-      #   # matches = self._find_matches(lr, self._mfrs)
-      #   frs1 = [(0, m) for m in self._frs[0]]
-      #   frs2 = [(1, m) for m in self._frs[0]]
-      #   f1_matches = self._find_matches(lr, frs1)
-      #   f2_matches = self._find_matches(lr, frs2)
-      #
-      #   followers[0] = (f1_matches[0][3], f1_matches[0][2])
-      #   followers[1] = (f2_matches[0][3], f2_matches[0][2])
+      min_error = float('inf')
 
-      for j, lr in enumerate(self._lrs):
-        lr_dist = lr[0]
+      for perm in cperms:
+        p1 = perm[0][0]
+        p2 = perm[0][1]
+        ff12 = perm[1]
 
-        for i, fr in enumerate(self._frs[0]):
-          fr_dist = fr[0]
-          diff = np.abs(lr_dist - fr_dist)
-          f1_set.append((j, diff, fr, lr))
+        pf1 = p1[0][1]
+        pf2 = p2[0][1]
+        p1l = p1[1]
+        p2l = p2[1]
+        ff1 = ff12[0]
+        ff2 = ff12[1]
 
-        for i, fr in enumerate(self._frs[1]):
-          fr_dist = fr[0]
-          diff = np.abs(lr_dist - fr_dist)
-          f2_set.append((j, diff, fr, lr))
+        if p1l == p2l or pf1 == ff1 or pf2 == ff2:
+          continue
 
-      f1_set = sorted(f1_set, key=lambda x: x[1])
-      f2_set = sorted(f2_set, key=lambda x: x[1])
+        # print()
+        # print("\t f1<-->l", p1)
+        # print("\t f2<-->l", p2)
+        # print("f1<-->f2", ff12)
 
-      f1 = f1_set[0]
-      f2 = f2_set[0]
+        error = np.square(pf1[0] - p1l[0]) + np.square(pf2[0] - p2l[0]) + np.square(ff1[0] - ff2[0])
 
-      if f1[0] == f2[0]:
-        if len(f1_set) == 1:
-          f2 = f2_set[1]
-        elif len(f2_set) == 1:
-          f1 = f1_set[1]
-        else:
-          if f1[1] > f2[1]:
-            f1 = f1_set[1]
-          else:
-            f2 = f2_set[1]
+        if error < min_error:
+          min_error = error
+          followers[0] = (p1l, pf1)
+          followers[1] = (p2l, pf2)
+          self._ff = (ff1, ff2)
 
-      followers[0] = (f1[3], f1[2])
-      followers[1] = (f2[3], f2[2])
+      # print()
+      # print("PERM RESULT")
+      # for f in followers:
+      #   print("\t", f)
 
-
-      # f1_set = []
-      # f2_set = []
-      #
-      # f1_pred = (lrs[0], lrs[0])
-      # f2_pred = (lrs[1], lrs[1])
-      #
-      # if len(f1rs) >= 2 and len(f2rs) >= 2:
-      #
-      #   for j,lr in enumerate(lrs):
-      #
-      #     lr_dist = lr[0]
-      #
-      #     for i, fr in enumerate(f1rs):
-      #       fr_dist = fr[0]
-      #       diff = np.abs(lr_dist - fr_dist)
-      #       f1_set.append((j, diff, fr))
-      #
-      #     for i, fr in enumerate(f2rs):
-      #       fr_dist = fr[0]
-      #       diff = np.abs(lr_dist - fr_dist)
-      #       f2_set.append((j, diff, fr))
-      #
-      #   f1_set = sorted(f1_set, key=lambda x: x[1])
-      #   f2_set = sorted(f2_set, key=lambda x: x[1])
-      #
-      #   f1 = f1_set[0]
-      #   f2 = f2_set[0]
-      #
-      #   if f1[0] == f2[0]:
-      #     if f1[1] > f2[1]:
-      #       f1 = f1_set[1]
-      #     else:
-      #       f2 = f2_set[1]
-
-      # print("FORWARD")
-
-        # if len(f1_matches) == 1 or len(f2_matches) == 1:
-        #   followers[0] = (f1_matches[0][3], f1_matches[0][2])
-        #   followers[1] = (f2_matches[0][3], f2_matches[0][2])
-        # else:
-        #
-        #
-        # m_ind = 0
-        #
-        # while True:
-        #   match = matches[m_ind]
-        #   m_i = match[0]
-        #   if followers[m_i] is None:
-        #     followers[m_i] = (match[3], match[2])
-        #     break
-        #   m_ind += 1
+      print("FORWARD")
 
     self._followers = followers
-    # print("FOLLOWERS", followers)
+    print("FOLLOWERS")
+    for i, f in enumerate(followers):
+      print("\t", i, f)
+
+    if self._ff is not None:
+      print("\t FF", self._ff)
+
     print()
 
   def _find_matches(self, needle, haystack):
@@ -720,7 +676,7 @@ class RobotControl(object):
     angular_coeff = 5
     speed_coeff = 5
 
-    velocities = [0]*2
+    velocities = [0] * 2
 
     for i, follower in enumerate(self._followers):
 
@@ -754,7 +710,7 @@ class RobotControl(object):
 
       vel_msg = Twist()
 
-      vel_msg.linear.x = np.clip(vel_follower[0], -max_speed*speed_coeff, max_speed*speed_coeff)
+      vel_msg.linear.x = np.clip(vel_follower[0], -max_speed * speed_coeff, max_speed * speed_coeff)
       vel_msg.angular.z = np.clip(vel_follower[1], -max_angular * angular_coeff, max_angular * angular_coeff)
       velocities[i] = vel_msg
 
@@ -762,19 +718,76 @@ class RobotControl(object):
 
   def three_robot(self, max_speed, max_angular):
     z = np.array([0., 0., 0., 0.])
-    # r f1 to leader
-    z[0] = self._followers[0][0][0]
-    # bearing f1 to l
-    z[1] = self._followers[0][1][1]
-    if z[1] < 0.:
-        z[1] += 2*np.math.pi
-    # r f2 to l
-    z[2] = self._followers[1][0][0]
 
-    # all wrt to leader
-    r1_coord = ThreeRobotMatcher.pol2cart(*self._followers[0][1])
-    r2_coord = ThreeRobotMatcher.pol2cart(*self._followers[1][1])
-    z[3] = vector_length(r1_coord-r2_coord)
+    f1 = self._followers[0]
+    f2 = self._followers[1]
+
+    lf1 = f1[0]
+    lf2 = f2[0]
+    f1l = f1[1]
+    f2l = f2[1]
+
+    # r f1 to leader
+    z[0] = f1l[0]
+
+    # theta leader to f1
+    z[1] = lf1[1]
+    # if z[1] < 0.:
+    #     z[1] += 2*np.math.pi
+
+    # r f2 to leader
+    z[2] = f2l[0]
+
+    print("f1 <--> leader", z[0])
+    print("theta leader \/ f1", z[1])
+    print("f2 <--> leader", z[2])
+    print("theta leader \/ f2", lf2[1])
+
+    # r f1 to leader
+    inner_ang = np.abs(lf1[1] - lf2[1])
+    if inner_ang > np.pi:
+      inner_ang = 2 * np.pi - inner_ang
+
+    print("f1 - l - f2 ang", inner_ang)
+
+    # cosine rule
+    z[3] = np.sqrt(np.square(z[0]) + np.square(z[2]) - 2 * z[0] * z[2] * np.cos(inner_ang))
+
+    print("f1 <--> f2", z[3])
+
+    print("f1l[1]", f1l[1])
+    print("lf1[1]", lf1[1])
+    print("f2l[1]", f2l[1])
+    print("lf2[1]", lf2[1])
+
+    print("b_12", np.pi + f1l[1] - lf1[1])
+    print("b_13", np.pi + f2l[1] - lf2[1])
+
+    g_12 = np.pi + (f1l[1] - lf1[1] + lf1[1])
+    g_13 = np.pi + (f2l[1] - lf2[1] + lf2[1])
+
+    # sine rule
+    a1 = np.arcsin(z[2] * np.sin(inner_ang) / z[3])
+    a2 = np.arcsin(z[0] * np.sin(inner_ang) / z[3])
+
+    print("a1", a1)
+    print("a2", a2)
+    print("b_23", np.pi + ((np.abs(f1l[1]) + a1) - (f2l[1] - a2)))
+
+    fl1 = f1l[1]
+    fl2 = f2l[1]
+
+    if fl1 < 0:
+      fl1 = fl1 + 2 * np.pi
+
+    if fl2 < 0:
+      fl2 = fl2 + 2 * np.pi
+
+    # TODO: work out how to do this properly
+    # maybe sum relative betas to leader
+    g_23 = np.pi + (((2 * np.pi - fl1) + a1))  # - (2 * np.pi - (f2l[1] + a2)) + (f2l[1] - a2))
+
+    gammas = [g_12, g_13, g_23]
 
     # initially I used this, but the outliers...
     # for rob in f1rs:
@@ -792,51 +805,51 @@ class RobotControl(object):
 
     speed_follower = [0., 0., 0., 0.]
     # using the same logic
-    lf = self._followers[0][0]
-    fl = self._followers[0][1]
+    # lf = self._followers[0][0]
+    # fl = self._followers[0][1]
+    #
+    # #  g12
+    # gammas = [np.pi + fl[1] - lf[1] + z[1]]
+    #
+    # lf = self._followers[1][0]
+    # fl = self._followers[1][1]
+    # #             g13
+    # gammas.append(np.pi + fl[1] - lf[1] + extra_psis[0])
 
-    #  g12
-    gammas = [np.pi + fl[1] - lf[1] + z[1]]
-
-    lf = self._followers[1][0]
-    fl = self._followers[1][1]
-    #             g13
-    gammas.append(np.pi + fl[1] - lf[1] + extra_psis[0])
-
-    
     #             g23
     # TODO Get gamma23 to be right, yep, the below does definitely not work
-    gammas.append(fl[1] - lf[1] - (self._followers[0][1][1] - self._followers[0][0][1]) + extra_psis[1])
+    # gammas.append(fl[1] - lf[1] - (self._followers[0][1][1] - self._followers[0][0][1]) + extra_psis[1])
 
     d = 0.05
-    G=np.array([[np.cos(gammas[0]), d*np.sin(gammas[0]), 0, 0],
-                [-np.sin(gammas[0])/z[0], d*np.cos(gammas[0])/z[0], 0, 0],
-                [0, 0, np.cos(gammas[1]), d*np.sin(gammas[1])],
-                [0, 0, np.cos(gammas[2]), d*np.sin(gammas[2])]])
-    F=np.array([[-np.cos(z[1]), 0],
-                [np.sin(z[1])/z[0], -1],
-                [-np.cos(extra_psis[0]), 0],
-                [0, 0]])
-        
+    G = np.array([[np.cos(gammas[0]), d * np.sin(gammas[0]), 0, 0],
+                  [-np.sin(gammas[0]) / z[0], d * np.cos(gammas[0]) / z[0], 0, 0],
+                  [0, 0, np.cos(gammas[1]), d * np.sin(gammas[1])],
+                  [0, 0, np.cos(gammas[2]), d * np.sin(gammas[2])]])
+    F = np.array([[-np.cos(z[1]), 0],
+                  [np.sin(z[1]) / z[0], -1],
+                  [-np.cos(extra_psis[0]), 0],
+                  [0, 0]])
+
     k = np.array([0.45, 0.24, 0.45, 0.45])
     print('\t zs', z, ' <-> ', zs_both_desired)
-    p = k * (zs_both_desired-z)
+    p = k * (zs_both_desired - z)
 
     speed_robot = np.array([self._leader_vel.linear.x, self._leader_vel.angular.z])
-    speed_followers = np.matmul(np.linalg.inv(G), (p-np.matmul(F, speed_robot)))
+    speed_followers = np.matmul(np.linalg.inv(G), (p - np.matmul(F, speed_robot)))
 
     vel_msgs = []
     vel_msg = Twist()
 
-    speed_coeff = 5
-    angular_coeff = 5
-    vel_msg.linear.x = np.clip(speed_followers[0], -max_speed*speed_coeff, max_speed*speed_coeff)
+    speed_coeff = 2
+    angular_coeff = 3
+    vel_msg.linear.x = np.clip(speed_followers[0], -max_speed * speed_coeff, max_speed * speed_coeff)
     vel_msg.angular.z = np.clip(speed_followers[1], -max_angular * angular_coeff, max_angular * angular_coeff)
     vel_msgs.append(vel_msg)
-    vel_msg.linear.x = np.clip(speed_followers[2], -max_speed*speed_coeff, max_speed*speed_coeff)
+    vel_msg.linear.x = np.clip(speed_followers[2], -max_speed * speed_coeff, max_speed * speed_coeff)
     vel_msg.angular.z = np.clip(speed_followers[3], -max_angular * angular_coeff, max_angular * angular_coeff)
     vel_msgs.append(vel_msg)
     return vel_msgs
+    pass
 
   def three_robot_with_potential_field(self, max_speed, max_angular, obstacles_for_each_robot):
 
@@ -1086,6 +1099,8 @@ def get_path(final_node):
     points_y.extend(center[Y] + np.sin(angles) * radius)
     return zip(points_x, points_y)
 
+STOP = False
+
 def run():
   global zs_desired
   global speed_coefficient
@@ -1166,7 +1181,7 @@ def run():
     vel_msg_l.linear.x = u
     vel_msg_l.angular.z = w
     print("LEADER VeL MSG", vel_msg_l)
-    l_publisher.publish(vel_msg_l)
+    l_publisher.publish(vel_msg_l) if not STOP else l_publisher.publish(stop_msg)
 
 
 
@@ -1276,10 +1291,109 @@ def run():
 
     for i, f_publisher in enumerate(f_publishers):
       print('follower', i, velocities[i].linear.x, velocities[i].angular.z)
-      f_publisher.publish(velocities[i])
+      f_publisher.publish(velocities[i]) if not STOP else f_publisher.publish(stop_msg)
 
     rate_limiter.sleep()
 
+# def run():
+#   global zs_desired
+#   global speed_coefficient
+#
+#   rospy.init_node('robot_controller')
+#   rate_limiter = rospy.Rate(ROSPY_RATE)
+#
+#   l_publisher = rospy.Publisher('/' + LEADER + '/cmd_vel', Twist, queue_size=5)
+#   f_publishers = [None] * len(FOLLOWERS)
+#   for i, follower in enumerate(FOLLOWERS):
+#     f_publishers[i] = rospy.Publisher('/' + follower + '/cmd_vel', Twist, queue_size=5)
+#
+#   leader_laser = SimpleLaser(LEADER, True)
+#   follower_lasers = [SimpleLaser(FOLLOWER_1), SimpleLaser(FOLLOWER_2)]
+#
+#   stop_msg = Twist()
+#   stop_msg.linear.x = 0.
+#   stop_msg.angular.z = 0.
+#
+#   # Make sure the robot is stopped.
+#   i = 0
+#   while i < 10 and not rospy.is_shutdown():
+#     l_publisher.publish(stop_msg)
+#     for f_publisher in f_publishers:
+#       f_publisher.publish(stop_msg)
+#
+#     rate_limiter.sleep()
+#     i += 1
+#
+#   max_speed = 0.06
+#   max_angular = 0.06
+#
+#   while not rospy.is_shutdown():
+#     if not leader_laser.ready:
+#       rate_limiter.sleep()
+#       continue
+#
+#     # print('measurments', leader_laser.measurements)
+#     # u, w = rule_based(*leader_laser.measurements)
+#     u, w = obstacle_avoidance.braitenberg(*leader_laser.measurements)
+#     u *= speed_coefficient * 0.25
+#     w *= speed_coefficient * 0.25
+#     print('vels', u, w)
+#     vel_msg_l = Twist()
+#     vel_msg_l.linear.x = np.clip(u, -max_speed, max_speed)
+#     vel_msg_l.angular.z = np.clip(w, -max_speed, max_speed)
+#     l_publisher.publish(vel_msg_l) if not STOP else l_publisher.publish(stop_msg)
+#
+#     # print()
+#     # print("LEADER: FINDING ROBOTS")
+#     l_res = leader_laser.cluster_environment()
+#     lrs = l_res[LIDAR_ROBOTS]
+#     lobs = l_res[LIDAR_OBSTACLES]
+#     lall = l_res[LIDAR_ALL]
+#     # print()
+#     # print("FOLLOWER1: FINDING ROBOTS")
+#     f1_res = follower_lasers[0].cluster_environment()
+#     f1rs = f1_res[LIDAR_ROBOTS]
+#     f1obs = f1_res[LIDAR_OBSTACLES]
+#     f1all = f1_res[LIDAR_ALL]
+#     # print()
+#     # print("FOLLOWER2: FINDING ROBOTS")
+#     f2_res = follower_lasers[1].cluster_environment()
+#     f2rs = f2_res[LIDAR_ROBOTS]
+#     f2obs = f2_res[LIDAR_OBSTACLES]
+#     f2all = f2_res[LIDAR_ALL]
+#
+#     # print()
+#     print("ROBOTS FROM LEADER PERSPECTIVE:", lrs)
+#     print("ROBOTS FROM FOLLOWER1 PERSPECTIVE:", f1rs)
+#     print("ROBOTS FROM FOLLOWER2 PERSPECTIVE:", f2rs)
+#
+#     print()
+#
+#     # if the robots can't see eachother (with the leader seeing at least one follower)
+#     if not (len(lrs) > 0 and ((len(f1rs) > 0 and len(f2rs) > 1) or (len(f2rs) > 0 and len(f1rs) > 1))):
+#       speed_coefficient = np.abs(speed_coefficient) * 0.95
+#       f_publishers[0].publish(stop_msg)
+#       f_publishers[1].publish(stop_msg)
+#       rate_limiter.sleep()
+#       continue
+#     else:
+#       speed_coefficient = 1.
+#
+#     # match the observed robots from the lidar to {leader, follower1, follower2}
+#     matcher = ThreeRobotMatcher(lrs, f1rs, f2rs)
+#     fps = matcher.followers
+#
+#     # initiate the control class
+#     control = RobotControl(fps, vel_msg_l, zs_desired)
+#
+#     # get the follower velocities calling the desired control algo
+#     # velocities = control.basic(max_speed, max_angular)
+#     velocities = control.three_robot(max_speed, max_angular)
+#
+#     for i, f_publisher in enumerate(f_publishers):
+#       f_publisher.publish(velocities[i]) if not STOP else f_publisher.publish(stop_msg)
+#
+#     rate_limiter.sleep()
 
 if __name__ == '__main__':
   run()
