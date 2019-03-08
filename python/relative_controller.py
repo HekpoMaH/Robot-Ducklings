@@ -582,44 +582,79 @@ class ThreeRobotMatcher(object):
 
       followers[o_i] = (om_l, om_f)
 
-    else:  # leader can see both followersss
+    else:  # leader can see both followers
 
-      permutations = list(itertools.product(self._mfrs, self._lrs))
-      f1_perms = [m for m in permutations if m[0][0] == 0]
-      f2_perms = [m for m in permutations if m[0][0] == 1]
-      nperms = list(itertools.product(f1_perms, f2_perms))
-      fperms = list(itertools.product(self._frs[0], self._frs[1]))
-      cperms = list(itertools.product(nperms, fperms))
+      # if each follower sees the leader and the other follower...
+      if len(self._frs[0]) > 1 and len(self._frs[1]) > 1:
 
-      min_error = float('inf')
+        permutations = list(itertools.product(self._mfrs, self._lrs))
+        f1_perms = [m for m in permutations if m[0][0] == 0]
+        f2_perms = [m for m in permutations if m[0][0] == 1]
+        nperms = list(itertools.product(f1_perms, f2_perms))
+        fperms = list(itertools.product(self._frs[0], self._frs[1]))
+        cperms = list(itertools.product(nperms, fperms))
 
-      for perm in cperms:
-        p1 = perm[0][0]
-        p2 = perm[0][1]
-        ff12 = perm[1]
+        min_error = float('inf')
 
-        pf1 = p1[0][1]
-        pf2 = p2[0][1]
-        p1l = p1[1]
-        p2l = p2[1]
-        ff1 = ff12[0]
-        ff2 = ff12[1]
+        for perm in cperms:
+          p1 = perm[0][0]
+          p2 = perm[0][1]
+          ff12 = perm[1]
 
-        if p1l == p2l or pf1 == ff1 or pf2 == ff2:
-          continue
+          pf1 = p1[0][1]
+          pf2 = p2[0][1]
+          p1l = p1[1]
+          p2l = p2[1]
+          ff1 = ff12[0]
+          ff2 = ff12[1]
 
-        # print()
-        # print("\t f1<-->l", p1)
-        # print("\t f2<-->l", p2)
-        # print("f1<-->f2", ff12)
+          if p1l == p2l or pf1 == ff1 or pf2 == ff2:
+            continue
 
-        error = np.square(pf1[0] - p1l[0]) + np.square(pf2[0] - p2l[0]) + np.square(ff1[0] - ff2[0])
+          # print()
+          # print("\t f1<-->l", p1)
+          # print("\t f2<-->l", p2)
+          # print("f1<-->f2", ff12)
 
-        if error < min_error:
-          min_error = error
-          followers[0] = (p1l, pf1)
-          followers[1] = (p2l, pf2)
-          self._ff = (ff1, ff2)
+          error = np.square(pf1[0] - p1l[0]) + np.square(pf2[0] - p2l[0]) + np.square(ff1[0] - ff2[0])
+
+          if error < min_error:
+            min_error = error
+            followers[0] = (p1l, pf1)
+            followers[1] = (p2l, pf2)
+            self._ff = (ff1, ff2)
+
+      else:
+        permutations = list(itertools.product(self._mfrs, self._lrs))
+        f1_perms = [m for m in permutations if m[0][0] == 0]
+        f2_perms = [m for m in permutations if m[0][0] == 1]
+        nperms = list(itertools.product(f1_perms, f2_perms))
+
+        min_error = float('inf')
+
+        for perm in nperms:
+          p1 = perm[0]
+          p2 = perm[1]
+
+          pf1 = p1[0][1]
+          pf2 = p2[0][1]
+          p1l = p1[1]
+          p2l = p2[1]
+
+          if p1l == p2l:
+            continue
+
+          # print()
+          # print("\t f1<-->l", p1)
+          # print("\t f2<-->l", p2)
+          # print("f1<-->f2", ff12)
+
+          error = np.square(pf1[0] - p1l[0])
+
+          if error < min_error:
+            min_error = error
+            followers[0] = (p1l, pf1)
+            followers[1] = (p2l, pf2)
 
       # print()
       # print("PERM RESULT")
@@ -655,6 +690,10 @@ class ThreeRobotMatcher(object):
   @property
   def followers(self):
     return self._followers
+
+  @property
+  def ff(self):
+    return self._ff
 
 def feedback_linearized(pose, velocity, epsilon):
 
@@ -717,7 +756,7 @@ class RobotControl(object):
 
     return velocities
 
-  def three_robot(self, max_speed, max_angular):
+  def three_robot(self, max_speed, max_angular, ff12):
     z = np.array([0., 0., 0., 0.])
 
     f1 = self._followers[0]
@@ -743,6 +782,7 @@ class RobotControl(object):
     print("theta leader \/ f1", z[1])
     print("f2 <--> leader", z[2])
     print("theta leader \/ f2", lf2[1])
+    print("f1 <--true--> f2", ff12[0][0], ff12[1][0])
 
     # r f1 to leader
     inner_ang = np.abs(lf1[1] - lf2[1])
@@ -773,7 +813,10 @@ class RobotControl(object):
 
     print("a1", a1)
     print("a2", a2)
-    print("b_23", np.pi + ((np.abs(f1l[1]) + a1) - (f2l[1] - a2)))
+    print("b_23 pred", np.pi + ((np.abs(f1l[1]) + a1) - (f2l[1] - a2)))
+
+    b_23_t = np.pi + ff12[0][1] - ff12[1][1]
+    print("b_23 true", b_23_t)
 
     fl1 = f1l[1]
     fl2 = f2l[1]
@@ -786,7 +829,8 @@ class RobotControl(object):
 
     # TODO: work out how to do this properly
     # maybe sum relative betas to leader
-    g_23 = np.pi + (((2 * np.pi - fl1) + a1))  # - (2 * np.pi - (f2l[1] + a2)) + (f2l[1] - a2))
+    # g_23 = np.pi + (((2 * np.pi - fl1) + a1))  # - (2 * np.pi - (f2l[1] + a2)) + (f2l[1] - a2))
+    g_23 = np.pi + ff12[0][1] - ff12[1][1] + ff12[1][1]
 
     gammas = [g_12, g_13, g_23]
 
@@ -1101,7 +1145,7 @@ def get_path(final_node):
     points_y.extend(center[Y] + np.sin(angles) * radius)
     return zip(points_x, points_y)
 
-STOP = False
+STOP = True
 
 def run():
   global zs_desired
@@ -1297,105 +1341,110 @@ def run():
 
     rate_limiter.sleep()
 
-# def run():
-#   global zs_desired
-#   global speed_coefficient
-#
-#   rospy.init_node('robot_controller')
-#   rate_limiter = rospy.Rate(ROSPY_RATE)
-#
-#   l_publisher = rospy.Publisher('/' + LEADER + '/cmd_vel', Twist, queue_size=5)
-#   f_publishers = [None] * len(FOLLOWERS)
-#   for i, follower in enumerate(FOLLOWERS):
-#     f_publishers[i] = rospy.Publisher('/' + follower + '/cmd_vel', Twist, queue_size=5)
-#
-#   leader_laser = SimpleLaser(LEADER, True)
-#   follower_lasers = [SimpleLaser(FOLLOWER_1), SimpleLaser(FOLLOWER_2)]
-#
-#   stop_msg = Twist()
-#   stop_msg.linear.x = 0.
-#   stop_msg.angular.z = 0.
-#
-#   # Make sure the robot is stopped.
-#   i = 0
-#   while i < 10 and not rospy.is_shutdown():
-#     l_publisher.publish(stop_msg)
-#     for f_publisher in f_publishers:
-#       f_publisher.publish(stop_msg)
-#
-#     rate_limiter.sleep()
-#     i += 1
-#
-#   max_speed = 0.06
-#   max_angular = 0.06
-#
-#   while not rospy.is_shutdown():
-#     if not leader_laser.ready:
-#       rate_limiter.sleep()
-#       continue
-#
-#     # print('measurments', leader_laser.measurements)
-#     # u, w = rule_based(*leader_laser.measurements)
-#     u, w = obstacle_avoidance.braitenberg(*leader_laser.measurements)
-#     u *= speed_coefficient * 0.25
-#     w *= speed_coefficient * 0.25
-#     print('vels', u, w)
-#     vel_msg_l = Twist()
-#     vel_msg_l.linear.x = np.clip(u, -max_speed, max_speed)
-#     vel_msg_l.angular.z = np.clip(w, -max_speed, max_speed)
-#     l_publisher.publish(vel_msg_l) if not STOP else l_publisher.publish(stop_msg)
-#
-#     # print()
-#     # print("LEADER: FINDING ROBOTS")
-#     l_res = leader_laser.cluster_environment()
-#     lrs = l_res[LIDAR_ROBOTS]
-#     lobs = l_res[LIDAR_OBSTACLES]
-#     lall = l_res[LIDAR_ALL]
-#     # print()
-#     # print("FOLLOWER1: FINDING ROBOTS")
-#     f1_res = follower_lasers[0].cluster_environment()
-#     f1rs = f1_res[LIDAR_ROBOTS]
-#     f1obs = f1_res[LIDAR_OBSTACLES]
-#     f1all = f1_res[LIDAR_ALL]
-#     # print()
-#     # print("FOLLOWER2: FINDING ROBOTS")
-#     f2_res = follower_lasers[1].cluster_environment()
-#     f2rs = f2_res[LIDAR_ROBOTS]
-#     f2obs = f2_res[LIDAR_OBSTACLES]
-#     f2all = f2_res[LIDAR_ALL]
-#
-#     # print()
-#     print("ROBOTS FROM LEADER PERSPECTIVE:", lrs)
-#     print("ROBOTS FROM FOLLOWER1 PERSPECTIVE:", f1rs)
-#     print("ROBOTS FROM FOLLOWER2 PERSPECTIVE:", f2rs)
-#
-#     print()
-#
-#     # if the robots can't see eachother (with the leader seeing at least one follower)
-#     if not (len(lrs) > 0 and ((len(f1rs) > 0 and len(f2rs) > 1) or (len(f2rs) > 0 and len(f1rs) > 1))):
-#       speed_coefficient = np.abs(speed_coefficient) * 0.95
-#       f_publishers[0].publish(stop_msg)
-#       f_publishers[1].publish(stop_msg)
-#       rate_limiter.sleep()
-#       continue
-#     else:
-#       speed_coefficient = 1.
-#
-#     # match the observed robots from the lidar to {leader, follower1, follower2}
-#     matcher = ThreeRobotMatcher(lrs, f1rs, f2rs)
-#     fps = matcher.followers
-#
-#     # initiate the control class
-#     control = RobotControl(fps, vel_msg_l, zs_desired)
-#
-#     # get the follower velocities calling the desired control algo
-#     # velocities = control.basic(max_speed, max_angular)
-#     velocities = control.three_robot(max_speed, max_angular)
-#
-#     for i, f_publisher in enumerate(f_publishers):
-#       f_publisher.publish(velocities[i]) if not STOP else f_publisher.publish(stop_msg)
-#
-#     rate_limiter.sleep()
+def run2():
+  global zs_desired
+  global speed_coefficient
+
+  rospy.init_node('robot_controller')
+  rate_limiter = rospy.Rate(ROSPY_RATE)
+
+  l_publisher = rospy.Publisher('/' + LEADER + '/cmd_vel', Twist, queue_size=5)
+  f_publishers = [None] * len(FOLLOWERS)
+  for i, follower in enumerate(FOLLOWERS):
+    f_publishers[i] = rospy.Publisher('/' + follower + '/cmd_vel', Twist, queue_size=5)
+
+  leader_laser = SimpleLaser(LEADER, True)
+  follower_lasers = [SimpleLaser(FOLLOWER_1), SimpleLaser(FOLLOWER_2)]
+
+  stop_msg = Twist()
+  stop_msg.linear.x = 0.
+  stop_msg.angular.z = 0.
+
+  # Make sure the robot is stopped.
+  i = 0
+  while i < 10 and not rospy.is_shutdown():
+    l_publisher.publish(stop_msg)
+    for f_publisher in f_publishers:
+      f_publisher.publish(stop_msg)
+
+    rate_limiter.sleep()
+    i += 1
+
+  max_speed = 0.06
+  max_angular = 0.06
+
+  while not rospy.is_shutdown():
+    if not leader_laser.ready:
+      rate_limiter.sleep()
+      continue
+
+    # print('measurments', leader_laser.measurements)
+    # u, w = rule_based(*leader_laser.measurements)
+    u, w = obstacle_avoidance.braitenberg(*leader_laser.measurements)
+    u *= speed_coefficient * 0.25
+    w *= speed_coefficient * 0.25
+    print('vels', u, w)
+    vel_msg_l = Twist()
+    vel_msg_l.linear.x = np.clip(u, -max_speed, max_speed)
+    vel_msg_l.angular.z = np.clip(w, -max_speed, max_speed)
+    l_publisher.publish(vel_msg_l) if not STOP else l_publisher.publish(stop_msg)
+
+    # print()
+    # print("LEADER: FINDING ROBOTS")
+    l_res = leader_laser.cluster_environment()
+    lrs = l_res[LIDAR_ROBOTS]
+    lobs = l_res[LIDAR_OBSTACLES]
+    lall = l_res[LIDAR_ALL]
+    # print()
+    # print("FOLLOWER1: FINDING ROBOTS")
+    f1_res = follower_lasers[0].cluster_environment()
+    f1rs = f1_res[LIDAR_ROBOTS]
+    f1obs = f1_res[LIDAR_OBSTACLES]
+    f1all = f1_res[LIDAR_ALL]
+    # print()
+    # print("FOLLOWER2: FINDING ROBOTS")
+    f2_res = follower_lasers[1].cluster_environment()
+    f2rs = f2_res[LIDAR_ROBOTS]
+    f2obs = f2_res[LIDAR_OBSTACLES]
+    f2all = f2_res[LIDAR_ALL]
+
+    # print()
+    print("ROBOTS FROM LEADER PERSPECTIVE:", lrs)
+    print("ROBOTS FROM FOLLOWER1 PERSPECTIVE:", f1rs)
+    print("ROBOTS FROM FOLLOWER2 PERSPECTIVE:", f2rs)
+
+    print()
+
+    # if the robots can't see eachother (with the leader seeing at least one follower)
+    if not (len(lrs) > 0 and ((len(f1rs) > 0 and len(f2rs) > 1) or (len(f2rs) > 0 and len(f1rs) > 1))):
+      speed_coefficient = np.abs(speed_coefficient) * 0.95
+      f_publishers[0].publish(stop_msg)
+      f_publishers[1].publish(stop_msg)
+      rate_limiter.sleep()
+      continue
+    else:
+      speed_coefficient = 1.
+
+    # match the observed robots from the lidar to {leader, follower1, follower2}
+    matcher = ThreeRobotMatcher(lrs, f1rs, f2rs)
+    fps = matcher.followers
+    ffs = matcher.ff
+
+    # initiate the control class
+    control = RobotControl(fps, vel_msg_l, zs_desired)
+
+    # get the follower velocities calling the desired control algo
+
+    # ffs indicate that the two followers can see each other
+    if ffs is not None:
+      velocities = control.three_robot(max_speed, max_angular, ffs)
+    else:
+      velocities = control.basic(max_speed, max_angular)
+
+    for i, f_publisher in enumerate(f_publishers):
+      f_publisher.publish(velocities[i]) if not STOP else f_publisher.publish(stop_msg)
+
+    rate_limiter.sleep()
 
 if __name__ == '__main__':
-  run()
+  run2()
