@@ -736,6 +736,9 @@ class ThreeRobotMatcher(object):
 
         min_error = float('inf')
 
+        res_set = []
+        filtered_res = []
+
         for perm in cperms:
           p1 = perm[0][0]
           p2 = perm[0][1]
@@ -756,13 +759,32 @@ class ThreeRobotMatcher(object):
           # print("\t f2<-->l", p2)
           # print("f1<-->f2", ff12)
 
-          error = np.square(pf1[0] - p1l[0]) + np.square(pf2[0] - p2l[0]) + np.square(ff1[0] - ff2[0])
+          error = np.abs(pf1[0] - p1l[0]) + np.abs(pf2[0] - p2l[0]) + np.abs(ff1[0] - ff2[0])
+          res_set.append((error, (p1l, pf1), (p2l, pf2), (ff1, ff2)))
 
-          if error < min_error:
-            min_error = error
-            followers[0] = (p1l, pf1)
-            followers[1] = (p2l, pf2)
-            self._ff = (ff1, ff2)
+          if error < 0.4:
+            filtered_res.append((error, (p1l, pf1), (p2l, pf2), (ff1, ff2)))
+
+          # if error < min_error:
+          #   min_error = error
+          #   followers[0] = (p1l, pf1)
+          #   followers[1] = (p2l, pf2)
+          #   self._ff = (ff1, ff2)
+
+        if len(filtered_res) != 0:
+          # find the closest to the leader
+          best = min(filtered_res, key=lambda x: x[1][1] + x[2][1])
+          followers[0] = best[1]
+          followers[1] = best[2]
+          self._ff = best[3]
+        else:
+          sorted_res = sorted(res_set, key=lambda x: x[0])
+          best = sorted_res[0]
+          followers[0] = best[1]
+          followers[1] = best[2]
+          self._ff = best[3]
+
+
 
       else:
         permutations = list(itertools.product(self._mfrs, self._lrs))
@@ -1124,8 +1146,12 @@ class GoalFollower(object):
 
   def get_velocity(self, occupancy_grid):
 
+    vel_msg = Twist()
+
     if np.linalg.norm(self._goal_pos - self._leader_pose[:-1]) < 0.1:
-      return 0, 0
+      vel_msg.linear.x = 0
+      vel_msg.angular.z = 0
+      return vel_msg
 
     position = np.array([
       self._leader_pose[X] + EPSILON * np.cos(self._leader_pose[YAW]),
@@ -1165,7 +1191,6 @@ class GoalFollower(object):
     print("W", w)
     print()
 
-    vel_msg = Twist()
     vel_msg.linear.x = u
     vel_msg.angular.z = w
 
