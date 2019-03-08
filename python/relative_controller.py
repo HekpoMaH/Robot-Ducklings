@@ -566,7 +566,7 @@ class ThreeRobotMatcher(object):
       #     else:
       #       f2 = f2_set[1]
 
-      print("FORWARD")
+      # print("FORWARD")
 
         # if len(f1_matches) == 1 or len(f2_matches) == 1:
         #   followers[0] = (f1_matches[0][3], f1_matches[0][2])
@@ -585,7 +585,7 @@ class ThreeRobotMatcher(object):
         #   m_ind += 1
 
     self._followers = followers
-    print("FOLLOWERS", followers)
+    # print("FOLLOWERS", followers)
     print()
 
   def _find_matches(self, needle, haystack):
@@ -738,21 +738,117 @@ class RobotControl(object):
     vel_msg.angular.z = np.clip(speed_followers[3], -max_angular * angular_coeff, max_angular * angular_coeff)
     vel_msgs.append(vel_msg)
     return vel_msgs
-    pass
 
-  def three_robot_with_potential_field(self):
+  def three_robot_with_potential_field(self, max_speed, max_angular, obstacles_for_each_robot):
+
+    def cap(v, max_speed):
+      n = np.linalg.norm(v)
+      if n > max_speed:
+        return v / n * max_speed
+      return v
+
+    def dist_to_obstacle(position, obstacle_position, obstacle_radius):
+      # gets the distance to the obstacle's wall
+      dist = vector_length(position-obstacle_position)
+      dist -= obstacle_radius
+      return dist
+
+    def get_velocity_to_avoid_obstacles(position, obstacle_positions, obstacle_radii, q_star=0.35):
+      v = np.zeros(2, dtype=np.float32)
+
+      # If an obstacle is further away, (more than Q*) it should not
+      # have any repulsive potential
+
+      for obstacle, radius in zip(obstacle_positions, obstacle_radii):
+
+        if obstacle is None:
+            continue
+
+        # distance to cylinder's WALL, not CENTER
+        d = dist_to_obstacle(position, obstacle, radius)
+        if d > q_star:
+          continue # skip that one
+        
+        # print(obstacle, )
+
+        if d < 0.:
+          v = 0
+          break
+
+        # take the vector pointing outwards of the obstacle
+        vec = position - obstacle
+        vec /= vector_length(vec) # normalise it
+        # On the edge of the obstacle's field
+        # Q* will be equal to the distance, so the gradient
+        # will have magnitude 0.
+        # The closer to the obstacle, the larger
+        # the vector should be. As we approach the
+        # obstacle and the distance approaches 0,
+        # the gradient's magnitude goes
+        # towards infinity.
+
+        vec *= 0.005*(q_star-d)/d
+
+        v += vec
+
+      v = cap(v, max_speed)
+      return v
+
+    def feedback_linearized(pose, velocity, epsilon):
+      #Always relative to itself
+
+      u = velocity[X] * np.cos(pose[YAW]) + velocity[Y] * np.sin(pose[YAW])
+      w = (1 / epsilon) * (-velocity[X] * np.sin(pose[YAW]) + velocity[Y] * np.cos(pose[YAW]))
+
+      return u, w
+
+    def get_potential_speed(pose, measurements, angles):
+      tot = np.array([0., 0.])
+      # could probably be done in 1 call instead of iterating, but for now, it's acceptable
+      for alpha, lm in zip(angles, measurements):
+
+          if np.isnan(lm) or np.isinf(lm):
+              continue
+
+          obstacle_position = pose[:2] + lm*np.array([np.cos(alpha), np.sin(alpha)])
+          vec = get_velocity_to_avoid_obstacles(pose[:2], [obstacle_position], [0.])
+          tot += vec
+
+      up, wp = feedback_linearized(pose, tot, .2)
+      up *= .08
+      wp *= .06
+      print('\t \t total', up, wp)
+      return up, wp
+
+    for i,_ in enumerate(self._followers):
+      obstacles_for_each_robot[i] = [obstacle for obstacles_sublist in obstacles_for_each_robot[i] for obstacle in obstacles_sublist]
+
+
+    vel_msgs = self.basic(max_speed, max_angular)
+    print('basic vels', vel_msgs)
+    for i, follower in enumerate(self._followers):
+        # Position of robot relative to it's own frame is always [0., 0., 0.]
+        # print('\t lidar all', obstacles_for_each_robot[i])
+        print('\t', i, 'potential from obstacles')
+        ut, wt = get_potential_speed([0., 0., 0.], *zip(*obstacles_for_each_robot[i]))
+        print('\t', i, 'potential from other robots')
+        # ut2, wt2 = get_potential_speed([0., 0., 0.], *zip(*obstacles_for_each_robot[i][LIDAR_ROBOTS]))
+        vel_msgs[i].linear.x += ut #+ 0.1 * ut2
+        vel_msgs[i].angular.z += wt# + 0.1 * wt2
+
+    return vel_msgs
     pass
 
   def total(self):
     pass
 
-zs_desired = {FOLLOWERS[0]: np.array([0.4, 3.*np.math.pi/4.]),
-              FOLLOWERS[1]: np.array([0.75, 4.3*np.math.pi/4.])}
+zs_desired = {FOLLOWERS[0]: np.array([0.5, 3.*np.math.pi/4.]),
+              FOLLOWERS[1]: np.array([0.5, 5.*np.math.pi/4.])}
 # right triangle, two sides 0.4
 #                  l12,  psi12          , l13,   l23
 zs_both_desired = [0.4, 5.*np.math.pi/4., 0.4, np.sqrt(0.32)]
 #              psi13,            psi23
-extra_psis = [3.*np.math.pi/4., np.math.pi/2.]
+extra_psis = [3.*np.math.pi/4., 5*np.math.pi/4.]
 
 speed_coefficient = 1.
 
@@ -805,30 +901,31 @@ def run():
     vel_msg_l.angular.z = np.clip(w, -max_speed, max_speed)
     l_publisher.publish(vel_msg_l)
 
-    print()
-    print("LEADER: FINDING ROBOTS")
+    # print()
+    # print("LEADER: FINDING ROBOTS")
     l_res = leader_laser.cluster_environment()
     lrs = l_res[LIDAR_ROBOTS]
     lobs = l_res[LIDAR_OBSTACLES]
     lall = l_res[LIDAR_ALL]
-    print()
-    print("FOLLOWER1: FINDING ROBOTS")
+    # print()
+    # print("FOLLOWER1: FINDING ROBOTS")
     f1_res = follower_lasers[0].cluster_environment()
     f1rs = f1_res[LIDAR_ROBOTS]
     f1obs = f1_res[LIDAR_OBSTACLES]
     f1all = f1_res[LIDAR_ALL]
     print()
-    print("FOLLOWER2: FINDING ROBOTS")
+    # print("FOLLOWER2: FINDING ROBOTS")
     f2_res = follower_lasers[1].cluster_environment()
     f2rs = f2_res[LIDAR_ROBOTS]
     f2obs = f2_res[LIDAR_OBSTACLES]
     f2all = f2_res[LIDAR_ALL]
-    print()
-    print("ROBOTS FROM LEADER PERSPECTIVE:", lrs)
-    print("ROBOTS FROM FOLLOWER1 PERSPECTIVE:", f1rs)
-    print("ROBOTS FROM FOLLOWER2 PERSPECTIVE:", f2rs)
+    # print("RAW", f2_res[LIDAR_RAW])
+    # print()
+    # print("ROBOTS FROM LEADER PERSPECTIVE:", lrs)
+    # print("ROBOTS FROM FOLLOWER1 PERSPECTIVE:", f1rs)
+    # print("ROBOTS FROM FOLLOWER2 PERSPECTIVE:", f2rs)
 
-    print()
+    # print()
 
     # if the robots can't see eachother (with the leader seeing at least one follower)
     if not (len(lrs) > 0 and ((len(f1rs) > 0 and len(f2rs) > 1) or (len(f2rs) > 0 and len(f1rs) > 1))):
@@ -849,9 +946,12 @@ def run():
 
     # get the follower velocities calling the desired control algo
     # velocities = control.basic(max_speed, max_angular)
-    velocities = control.three_robot(max_speed, max_angular)
+    # velocities = control.three_robot(max_speed, max_angular)
+    # print("F1ALL", f1all)
+    velocities = control.three_robot_with_potential_field(max_speed, max_angular, [f1all, f2all])
 
     for i, f_publisher in enumerate(f_publishers):
+      print('follower', i, velocities[i].linear.x, velocities[i].angular.z)
       f_publisher.publish(velocities[i])
 
     rate_limiter.sleep()
