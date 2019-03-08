@@ -203,7 +203,7 @@ class SimpleLaser(object):
     min_points = 3
     t_sec = 0.05
     cluster_angle_mult = 1.1
-    lidar_radius_fuzz = 0.05
+    lidar_radius_fuzz = 0.01
     shape_mean_min = 1.4
     shape_mean_max = 1.6
     shape_std = 0.15
@@ -265,9 +265,10 @@ class SimpleLaser(object):
         diff_ang = diff_ang + np.pi * 2
 
       a_span = diff_ang + increment * 2
-      e_span_lidar = 2 * self.boundary_circ_angle(center_d + LIDAR_RADIUS, LIDAR_RADIUS)
-      e_span_lidar_p = 2 * self.boundary_circ_angle(center_d + LIDAR_RADIUS + lidar_radius_fuzz,
-                                                    LIDAR_RADIUS + lidar_radius_fuzz)
+      e_span_lidar = 2 * self.boundary_circ_angle(center_d + LIDAR_RADIUS + lidar_radius_fuzz,
+                                                  LIDAR_RADIUS + lidar_radius_fuzz)
+      e_span_lidar_p = 2 * self.boundary_circ_angle(center_d + LIDAR_RADIUS + 0.05 - lidar_radius_fuzz,
+                                                    LIDAR_RADIUS + 0.05 - lidar_radius_fuzz)
 
       # e_span = 2 * self.boundary_circ_angle(center_d + ROBOT_RADIUS, ROBOT_RADIUS)
       # e_rect_span = 2 * self.boundary_rect_angle(center_d, ROBOT_WIDTH)
@@ -343,38 +344,17 @@ class SimpleLaser(object):
 
     return result
 
+
 class LegDetector(object):
-  def __init__(self, slam):
+  def __init__(self, fps, ffs):
     rospy.Subscriber('/leg_tracker_measurements', PositionMeasurementArray, self.callback)
     self._position = np.array([np.nan, np.nan], dtype=np.float32)
-    self._slam = slam
-    self.other_robots = []
+    self._fps = fps
+    self._ffs = ffs
 
   def callback(self, msg):
-    # The pose from RViz is with respect to the "map".
 
-    if not self._slam.ready:
-        return
 
-    leader_pose = self._slam.get_pose(LEADER)
-    print(leader_pose)
-    # f_pose = [None, None]
-    # f_pose[0] = self._slam.get_pose(FOLLOWERS[0])
-    # f_pose[1] = self._slam.get_pose(FOLLOWERS[1])
-    # print('msg is', msg)
-    # # if it is tagged then it is not a person, but a robot
-    # tags = [False] * len(msg.people) 
-    # for follower_pos in f_pose:
-    #     min_idx = -1
-    #     min_len = 1e9
-    #     for i, person in enumerate(msg.people):
-    #         person_pos = np.array([person.pos.x, person.pos.y])
-    #         if vector_length(person_pos-follower_pos[:2]) < min_len:
-    #             min_idx = i
-    #             min_len = vector_length(person_pos-follower_pos[:2])
-
-    #     if len(msg.people) != 0:
-    #         tags[min_idx] = True
 
     highest_reliability = -1e9
     highest_reliable_person = None
@@ -384,35 +364,35 @@ class LegDetector(object):
     print("other robots are", relative_coords)
 
     robots_in_slam_coords = [
-                      # TODO If I didn't get the geometry wrong (50% chance), these should give coordinate of followers in global
-            np.array([leader_pose[X] + relative_coord[0]*np.cos(leader_pose[YAW]+relative_coord[1]),
-                      leader_pose[Y] + relative_coord[0]*np.sin(leader_pose[YAW]+relative_coord[1])])
-            for relative_coord in relative_coords]
+      # TODO If I didn't get the geometry wrong (50% chance), these should give coordinate of followers in global
+      np.array([leader_pose[X] + relative_coord[0] * np.cos(leader_pose[YAW] + relative_coord[1]),
+                leader_pose[Y] + relative_coord[0] * np.sin(leader_pose[YAW] + relative_coord[1])])
+      for relative_coord in relative_coords]
 
     print("leader in SLAM", leader_pose)
     print("robots in SLAM", robots_in_slam_coords)
 
     print("distances to each detected leg")
     for j, robots in enumerate(robots_in_slam_coords):
-        print("\tROBO", j)
-        for i, person in enumerate(msg.people):
-            print("\t\t ", i, "->", vector_length(robots-np.array([person.pos.x, person.pos.y])))
+      print("\tROBO", j)
+      for i, person in enumerate(msg.people):
+        print("\t\t ", i, "->", vector_length(robots - np.array([person.pos.x, person.pos.y])))
 
     for i, person in enumerate(msg.people):
 
-        # if tags[i] == True:
-        #     continue
+      # if tags[i] == True:
+      #     continue
 
-        if person.reliability > highest_reliability:
-            highest_reliable_person = person
-            highest_reliability = person.reliability
+      if person.reliability > highest_reliability:
+        highest_reliable_person = person
+        highest_reliability = person.reliability
 
     if highest_reliable_person is None:
-        return
+      return
 
     x = highest_reliable_person.pos.x
     y = highest_reliable_person.pos.y
-    
+
     # Sometimes this is a bit off
     # print("\t This is assumed to be the person")
     # print("\t X", x)
@@ -433,6 +413,138 @@ class LegDetector(object):
   # @other_robots.setter
   def set_other_robots(self, other_robots):
     self.other_robots = other_robots
+
+
+class LegDetector2(object):
+  def __init__(self):
+    rospy.Subscriber('/leg_tracker_measurements', PositionMeasurementArray, self.callback)
+    self._position = np.array([np.nan, np.nan], dtype=np.float32)
+    self._predictions = []
+    self.other_robots = []
+    self._ready = False
+
+  def find_leg(self, fps, ffs):
+
+    #copy predictions in case it gets rewritten during evalution of this func
+    preds = list(self._predictions)
+
+    fpreds = list(itertools.product(fps, preds))
+    error = 0
+    leg = None
+
+    print("LEG PERMS")
+
+    for perm in fpreds:
+
+      follower = perm[0]
+      lf_pol = follower[0]
+
+      person_pred = perm[1]
+      pos = np.array([person_pred.pos.x, person_pred.pos.y])
+
+      lf_cart = ThreeRobotMatcher.pol2cart(*lf_pol)
+
+      print("\t follower", lf_pol)
+      print('\t possible leg', ThreeRobotMatcher.cart2pol(*pos))
+      print()
+
+
+      diff = np.linalg.norm(pos - lf_cart)
+
+      if diff > error:
+        error = diff
+        leg = (pos, ThreeRobotMatcher.cart2pol(*pos))
+
+    return leg
+
+  def callback(self, msg):
+
+    self._ready = True
+
+    self._predictions = []
+
+    for i, person in enumerate(msg.people):
+      self._predictions.append(person)
+
+
+    # leader_pose = self._slam.get_pose(LEADER)
+    # print(leader_pose)
+    # # f_pose = [None, None]
+    # # f_pose[0] = self._slam.get_pose(FOLLOWERS[0])
+    # # f_pose[1] = self._slam.get_pose(FOLLOWERS[1])
+    # # print('msg is', msg)
+    # # # if it is tagged then it is not a person, but a robot
+    # # tags = [False] * len(msg.people)
+    # # for follower_pos in f_pose:
+    # #     min_idx = -1
+    # #     min_len = 1e9
+    # #     for i, person in enumerate(msg.people):
+    # #         person_pos = np.array([person.pos.x, person.pos.y])
+    # #         if vector_length(person_pos-follower_pos[:2]) < min_len:
+    # #             min_idx = i
+    # #             min_len = vector_length(person_pos-follower_pos[:2])
+    #
+    # #     if len(msg.people) != 0:
+    # #         tags[min_idx] = True
+    #
+    # highest_reliability = -1e9
+    # highest_reliable_person = None
+    # # print("messages are", msg.people)
+    # # This one below just discards the follower to leader (r,phi) TODO confirm that [0]th element of the followers is always coordinate of follower relative to leader
+    # relative_coords = [relative_coord[0] for relative_coord in self.other_robots]
+    # print("other robots are", relative_coords)
+    #
+    # robots_in_slam_coords = [
+    #                   # TODO If I didn't get the geometry wrong (50% chance), these should give coordinate of followers in global
+    #         np.array([leader_pose[X] + relative_coord[0]*np.cos(leader_pose[YAW]+relative_coord[1]),
+    #                   leader_pose[Y] + relative_coord[0]*np.sin(leader_pose[YAW]+relative_coord[1])])
+    #         for relative_coord in relative_coords]
+    #
+    # print("leader in SLAM", leader_pose)
+    # print("robots in SLAM", robots_in_slam_coords)
+    #
+    # print("distances to each detected leg")
+    # for j, robots in enumerate(robots_in_slam_coords):
+    #     print("\tROBO", j)
+    #     for i, person in enumerate(msg.people):
+    #         print("\t\t ", i, "->", vector_length(robots-np.array([person.pos.x, person.pos.y])))
+    #
+    # for i, person in enumerate(msg.people):
+    #
+    #     # if tags[i] == True:
+    #     #     continue
+    #
+    #     if person.reliability > highest_reliability:
+    #         highest_reliable_person = person
+    #         highest_reliability = person.reliability
+    #
+    # if highest_reliable_person is None:
+    #     return
+    #
+    # x = highest_reliable_person.pos.x
+    # y = highest_reliable_person.pos.y
+    #
+    # # Sometimes this is a bit off
+    # # print("\t This is assumed to be the person")
+    # # print("\t X", x)
+    # # print("\t Y", y)
+    # # print()
+    #
+    # self._position[X] = x
+    # self._position[Y] = y
+
+  @property
+  def ready(self):
+    return self._ready
+
+  @property
+  def position(self):
+    return self._position
+
+  # @other_robots.setter
+  def set_other_robots(self, other_robots):
+    self.other_robots = other_robots
+
 
 class SLAM(object):
   def __init__(self):
@@ -519,7 +631,8 @@ class SLAM(object):
   @property
   def ready(self):
     # print('ogrid', self._occupancy_grid, 'nan', np.isnan(self.pose[0]))
-    return self._occupancy_grid is not None and not np.isnan(self._pose[0])
+    # return self._occupancy_grid is not None and not np.isnan(self._pose[0])
+    return self._occupancy_grid is not None
 
   @property
   def pose(self):
@@ -722,12 +835,6 @@ class ThreeRobotMatcher(object):
   def ff(self):
     return self._ff
 
-def feedback_linearized(pose, velocity, epsilon):
-
-  u = velocity[X] * np.cos(pose[YAW]) + velocity[Y] * np.sin(pose[YAW])
-  w = (1 / epsilon) * (-velocity[X] * np.sin(pose[YAW]) + velocity[Y] * np.cos(pose[YAW]))
-
-  return u, w
 
 class RobotControl(object):
 
@@ -763,19 +870,19 @@ class RobotControl(object):
       beta = np.pi + fl[1] - lf[1]
       gamma = beta + z[1]
 
-      print("z[0] l_12", z[0])
-      print("z[1] psi_ij", z[1])
-      print("b_12", beta)
-      print("g_12", gamma)
+      # print("z[0] l_12", z[0])
+      # print("z[1] psi_ij", z[1])
+      # print("b_12", beta)
+      # print("g_12", gamma)
 
       G = np.array([[np.cos(gamma), d * np.sin(gamma)],
                     [-np.sin(gamma) / z[0], d * np.cos(gamma) / z[0]]])
       F = np.array([[-np.cos(z[1]), 0],
                     [np.sin(z[1]) / z[0], -1]])
 
-      print('\t z<->zs', z, ' <-> ', self._desired_pose[FOLLOWERS[i]])
+      # print('\t z<->zs', z, ' <-> ', self._desired_pose[FOLLOWERS[i]])
       p = k * (self._desired_pose[FOLLOWERS[i]] - z)
-      print('\t p k * (zs - z)', p)
+      # print('\t p k * (zs - z)', p)
 
       speed_robot = np.array([self._leader_vel.linear.x, self._leader_vel.angular.z])
       vel_follower = np.matmul(np.linalg.inv(G), (p - np.matmul(F, speed_robot)))
@@ -977,7 +1084,7 @@ class RobotControl(object):
           vec = get_velocity_to_avoid_obstacles(pose[:2], [obstacle_position], [0.])
           tot += vec
 
-      up, wp = feedback_linearized(pose, tot, .2)
+      up, wp = GoalFollower.feedback_linearized(pose, tot, .2)
       up *= .28
       wp *= .26
       print('\t \t total', up, wp)
@@ -1005,6 +1112,218 @@ class RobotControl(object):
   def total(self):
     pass
 
+
+class GoalFollower(object):
+
+  last_path_calc = 0
+  path = []
+
+  def __init__(self, goal_pos, leader_pose):
+    self._goal_pos = goal_pos
+    self._leader_pose = leader_pose
+
+  def get_velocity(self, occupancy_grid):
+
+    if np.linalg.norm(self._goal_pos - self._leader_pose[:-1]) < 0.1:
+      return 0, 0
+
+    position = np.array([
+      self._leader_pose[X] + EPSILON * np.cos(self._leader_pose[YAW]),
+      self._leader_pose[Y] + EPSILON * np.sin(self._leader_pose[YAW])], dtype=np.float32)
+
+    current_time = rospy.Time.now().to_sec()
+    if current_time - self.last_path_calc > 2.:
+
+      start_node, final_node = rrt.rrt_star(self._leader_pose, self._goal_pos, occupancy_grid)
+      self.path = self.get_path(final_node)
+      self.last_path_cal = current_time
+
+      # # Publish path to RViz.
+      # path_msg = Path()
+      # path_msg.header.seq = frame_id
+      # path_msg.header.stamp = rospy.Time.now()
+      # path_msg.header.frame_id = 'map'
+      # for u in current_path:
+      #   pose_msg = PoseStamped()
+      #   pose_msg.header.seq = frame_id
+      #   pose_msg.header.stamp = path_msg.header.stamp
+      #   pose_msg.header.frame_id = 'map'
+      #   pose_msg.pose.position.x = u[X]
+      #   pose_msg.pose.position.y = u[Y]
+      #   path_msg.poses.append(pose_msg)
+      # path_publisher.publish(path_msg)
+
+    u, w = 0, 0
+
+    print("PATH", self.path)
+
+    if len(self.path) > 0:
+      v = self.calc_velocity(position, np.array(self.path, dtype=np.float32))
+      u, w = self.feedback_linearized(self._leader_pose, v, epsilon=EPSILON)
+
+    print("U", u)
+    print("W", w)
+    print()
+
+    vel_msg = Twist()
+    vel_msg.linear.x = u
+    vel_msg.angular.z = w
+
+    return vel_msg
+
+  def calc_velocity(self, position, path_points):
+    v = np.zeros_like(position)
+    if len(path_points) == 0:
+      return v
+    # Stop moving if the goal is reached.
+    if np.linalg.norm(position - path_points[-1]) < .2:
+      return v
+
+    """
+      This uses the path finding algorithm developed by Craig Reynolds in his paper
+      https://www.red3d.com/cwr/papers/1999/gdc99steer.pdf
+
+      The algorithm has been slightly modified as the current velocity is not given and in the original algorithm it is 
+      needed to predict the future location of the robot. I use the current position in all places where Reynolds uses
+      the future position. The algorithm still performs well. When the robot deviates from the path, it corrects with a 
+      velocity proportional to its deviation. 
+
+      An outline of the algorithm is given below:  
+
+      step 1: Find the closest point, cp, on the path to the robots position, p
+
+      step 2: Determine a target point, tp, a fixed distance ahead of cp on the path
+
+      step 3: If distance(cp - p) is greater than the radius of the path, move the robot towards the target point. If not,
+      move the robot parallel to the segment which contains tp. 
+
+    """
+
+    SPEED = .1
+    segment_size = 0.05  # a segment spans 5cm
+    radius = 0.02  # the max distance either side of the path before the robot corrects
+    velocity_scale = SPEED  # scales the forward velocity (when not correcting)
+    target_offset = segment_size * 0.2  # distance of target point ahead of the closest point to robot on path
+    correction_scale = 10  # scales the correcting velocity
+    correction_min = 1 * velocity_scale  # minimum correcting velocity
+    correction_max = 2 * velocity_scale  # maximum correcting velocity
+
+    def magnitude(v):
+      return np.linalg.norm(v)
+
+    def get_normal(point, a, b):
+      ab_norm = (b - a) / magnitude(b - a)
+      return a + np.dot(ab_norm, point - a) * ab_norm
+
+    def point_in_segment(point, a, b):
+      eps = 0.0001
+      d = magnitude(point - a) + magnitude(point - b) - magnitude(a - b)
+      return -eps < d or eps > d
+
+    def truncate_vector(v, min, max):
+      mag = magnitude(v)
+      if mag < min:
+        return min * v / mag
+      if mag > max:
+        return max * v / mag
+      return v
+
+    closest_point = None
+    target_point = None
+    target_segment = None
+    min_dist = np.inf
+
+    for i in range(len(path_points) - 2):
+      a = path_points[i]
+      b = path_points[i + 1]
+      c = path_points[i + 2]
+
+      normal_point = get_normal(position, a, b)
+      norm_in_segment = point_in_segment(normal_point, a, b)
+
+      if not norm_in_segment:
+        normal_point = b
+
+      # distance between the normal point and the position of the robot
+      dist = magnitude(position - normal_point)
+
+      # evaluate if smallest distance so far
+      if dist < min_dist:
+
+        min_dist = dist
+        closest_point = normal_point
+
+        # calculate distance to end of segment
+        segment_distance_left = magnitude(b - closest_point)
+
+        # if distance to end of segment is less than distance from closest point to target point, target in next segment
+        if segment_distance_left < target_offset:
+          target_point = (target_offset - segment_distance_left) * (c - b) / magnitude(c - b)
+          target_segment = c - b
+        else:
+          target_point = target_offset * (b - a) / magnitude(b - a)
+          target_segment = b - a
+
+    # get the vector and distance between the robots position and closest point on the path
+    cp_dir = closest_point - position
+    cp_dist = magnitude(cp_dir)
+
+    # if robot is outside of radius of path, move towards target point
+    if cp_dist > radius:
+      v = truncate_vector(correction_scale * target_point, correction_min, correction_max)
+    else:  # otherwise move parallel to the target_segment
+      v = velocity_scale * target_segment / magnitude(target_segment)
+
+    return v
+
+  def get_path(self, final_node):
+    # Construct path from RRT solution.
+    if final_node is None:
+      return []
+    path_reversed = []
+    path_reversed.append(final_node)
+    while path_reversed[-1].parent is not None:
+      path_reversed.append(path_reversed[-1].parent)
+    path = list(reversed(path_reversed))
+    # Put a point every 5 cm.
+    distance = 0.05
+    offset = 0.
+    points_x = []
+    points_y = []
+    for u, v in zip(path, path[1:]):
+      center, radius = rrt.find_circle(u, v)
+      du = u.position - center
+      theta1 = np.arctan2(du[1], du[0])
+      dv = v.position - center
+      theta2 = np.arctan2(dv[1], dv[0])
+      # Check if the arc goes clockwise.
+      clockwise = np.cross(u.direction, du).item() > 0.
+      # Generate a point every 5cm apart.
+      da = distance / radius
+      offset_a = offset / radius
+      if clockwise:
+        da = -da
+        offset_a = -offset_a
+        if theta2 > theta1:
+          theta2 -= 2. * np.pi
+      else:
+        if theta2 < theta1:
+          theta2 += 2. * np.pi
+      angles = np.arange(theta1 + offset_a, theta2, da)
+      offset = distance - (theta2 - angles[-1]) * radius
+      points_x.extend(center[X] + np.cos(angles) * radius)
+      points_y.extend(center[Y] + np.sin(angles) * radius)
+      return zip(points_x, points_y)
+
+  @staticmethod
+  def feedback_linearized(pose, velocity, epsilon):
+
+    u = velocity[X] * np.cos(pose[YAW]) + velocity[Y] * np.sin(pose[YAW])
+    w = (1 / epsilon) * (-velocity[X] * np.sin(pose[YAW]) + velocity[Y] * np.cos(pose[YAW]))
+
+    return u, w
+
+
 zs_desired = {FOLLOWERS[0]: np.array([0.5, 3.*np.math.pi/4.]),
               FOLLOWERS[1]: np.array([1.2, 5.*np.math.pi/4.])}
 # right triangle, two sides 0.4
@@ -1015,149 +1334,7 @@ extra_psis = [3.*np.math.pi/4., 5*np.math.pi/4.]
 
 speed_coefficient = 1.
 
-def get_velocity(position, path_points):
-  v = np.zeros_like(position)
-  if len(path_points) == 0:
-    return v
-  # Stop moving if the goal is reached.
-  if np.linalg.norm(position - path_points[-1]) < .2:
-    return v
 
-  """
-    This uses the path finding algorithm developed by Craig Reynolds in his paper
-    https://www.red3d.com/cwr/papers/1999/gdc99steer.pdf
-
-    The algorithm has been slightly modified as the current velocity is not given and in the original algorithm it is 
-    needed to predict the future location of the robot. I use the current position in all places where Reynolds uses
-    the future position. The algorithm still performs well. When the robot deviates from the path, it corrects with a 
-    velocity proportional to its deviation. 
-
-    An outline of the algorithm is given below:  
-
-    step 1: Find the closest point, cp, on the path to the robots position, p
-
-    step 2: Determine a target point, tp, a fixed distance ahead of cp on the path
-
-    step 3: If distance(cp - p) is greater than the radius of the path, move the robot towards the target point. If not,
-    move the robot parallel to the segment which contains tp. 
-
-  """
-
-  SPEED = .1
-  segment_size = 0.05  # a segment spans 5cm
-  radius = 0.02  # the max distance either side of the path before the robot corrects
-  velocity_scale = SPEED  # scales the forward velocity (when not correcting)
-  target_offset = segment_size * 0.2  # distance of target point ahead of the closest point to robot on path
-  correction_scale = 10  # scales the correcting velocity
-  correction_min = 1 * velocity_scale  # minimum correcting velocity
-  correction_max = 2 * velocity_scale  # maximum correcting velocity
-
-  def magnitude(v):
-    return np.linalg.norm(v)
-
-  def get_normal(point, a, b):
-    ab_norm = (b - a) / magnitude(b - a)
-    return a + np.dot(ab_norm, point - a) * ab_norm
-
-  def point_in_segment(point, a, b):
-    eps = 0.0001
-    d = magnitude(point - a) + magnitude(point - b) - magnitude(a - b)
-    return -eps < d or eps > d
-
-  def truncate_vector(v, min, max):
-    mag = magnitude(v)
-    if mag < min:
-      return min * v / mag
-    if mag > max:
-      return max * v / mag
-    return v
-
-  closest_point = None
-  target_point = None
-  target_segment = None
-  min_dist = np.inf
-
-  for i in range(len(path_points) - 2):
-    a = path_points[i]
-    b = path_points[i + 1]
-    c = path_points[i + 2]
-
-    normal_point = get_normal(position, a, b)
-    norm_in_segment = point_in_segment(normal_point, a, b)
-
-    if not norm_in_segment:
-      normal_point = b
-
-    # distance between the normal point and the position of the robot
-    dist = magnitude(position - normal_point)
-
-    # evaluate if smallest distance so far
-    if dist < min_dist:
-
-      min_dist = dist
-      closest_point = normal_point
-
-      # calculate distance to end of segment
-      segment_distance_left = magnitude(b - closest_point)
-
-      # if distance to end of segment is less than distance from closest point to target point, target in next segment
-      if segment_distance_left < target_offset:
-        target_point = (target_offset - segment_distance_left) * (c - b) / magnitude(c - b)
-        target_segment = c - b
-      else:
-        target_point = target_offset * (b - a) / magnitude(b - a)
-        target_segment = b - a
-
-  # get the vector and distance between the robots position and closest point on the path
-  cp_dir = closest_point - position
-  cp_dist = magnitude(cp_dir)
-
-  # if robot is outside of radius of path, move towards target point
-  if cp_dist > radius:
-    v = truncate_vector(correction_scale * target_point, correction_min, correction_max)
-  else:  # otherwise move parallel to the target_segment
-    v = velocity_scale * target_segment / magnitude(target_segment)
-
-  return v
-
-def get_path(final_node):
-  # Construct path from RRT solution.
-  if final_node is None:
-    return []
-  path_reversed = []
-  path_reversed.append(final_node)
-  while path_reversed[-1].parent is not None:
-    path_reversed.append(path_reversed[-1].parent)
-  path = list(reversed(path_reversed))
-  # Put a point every 5 cm.
-  distance = 0.05
-  offset = 0.
-  points_x = []
-  points_y = []
-  for u, v in zip(path, path[1:]):
-    center, radius = rrt.find_circle(u, v)
-    du = u.position - center
-    theta1 = np.arctan2(du[1], du[0])
-    dv = v.position - center
-    theta2 = np.arctan2(dv[1], dv[0])
-    # Check if the arc goes clockwise.
-    clockwise = np.cross(u.direction, du).item() > 0.
-    # Generate a point every 5cm apart.
-    da = distance / radius
-    offset_a = offset / radius
-    if clockwise:
-      da = -da
-      offset_a = -offset_a
-      if theta2 > theta1:
-        theta2 -= 2. * np.pi
-    else:
-      if theta2 < theta1:
-        theta2 += 2. * np.pi
-    angles = np.arange(theta1 + offset_a, theta2, da)
-    offset = distance - (theta2 - angles[-1]) * radius
-    points_x.extend(center[X] + np.cos(angles) * radius)
-    points_y.extend(center[Y] + np.sin(angles) * radius)
-    return zip(points_x, points_y)
 
 STOP = False
 
@@ -1175,7 +1352,7 @@ def run():
     f_publishers[i] = rospy.Publisher('/' + follower + '/cmd_vel', Twist, queue_size=5)
 
   slam = SLAM()
-  leg_detector = LegDetector(slam)
+  leg_detector = LegDetector()
   frame_id = 0
   current_path = []
 
@@ -1240,7 +1417,6 @@ def run():
     vel_msg_l.linear.x = 3*u
     vel_msg_l.angular.z = w
     print("LEADER VeL MSG", vel_msg_l)
-    print("STOP?", STOP)
     l_publisher.publish(vel_msg_l) if not STOP else l_publisher.publish(stop_msg)
 
 
@@ -1339,6 +1515,7 @@ def run():
     # match the observed robots from the lidar to {leader, follower1, follower2}
     matcher = ThreeRobotMatcher(lrs, f1rs, f2rs)
     fps = matcher.followers
+    ffs = matcher.ff
     print("Matched followers", fps)
     leg_detector.set_other_robots(fps)
 
@@ -1353,6 +1530,132 @@ def run():
 
     for i, f_publisher in enumerate(f_publishers):
       print('follower', i, velocities[i].linear.x, velocities[i].angular.z)
+      f_publisher.publish(velocities[i]) if not STOP else f_publisher.publish(stop_msg)
+
+    rate_limiter.sleep()
+
+def run1():
+  global zs_desired
+  global speed_coefficient
+
+  rospy.init_node('robot_controller')
+  rate_limiter = rospy.Rate(ROSPY_RATE)
+
+  l_publisher = rospy.Publisher('/' + LEADER + '/cmd_vel', Twist, queue_size=5)
+  f_publishers = [None] * len(FOLLOWERS)
+  for i, follower in enumerate(FOLLOWERS):
+    f_publishers[i] = rospy.Publisher('/' + follower + '/cmd_vel', Twist, queue_size=5)
+
+  slam = SLAM()
+  leader_laser = SimpleLaser(LEADER, True)
+  follower_lasers = [SimpleLaser(FOLLOWER_1), SimpleLaser(FOLLOWER_2)]
+  leg_detector = LegDetector2()
+
+  stop_msg = Twist()
+  stop_msg.linear.x = 0.
+  stop_msg.angular.z = 0.
+
+  # Make sure the robot is stopped.
+  i = 0
+  while i < 10 and not rospy.is_shutdown():
+    l_publisher.publish(stop_msg)
+    for f_publisher in f_publishers:
+      f_publisher.publish(stop_msg)
+
+    rate_limiter.sleep()
+    i += 1
+
+  max_speed = 0.06
+  max_angular = 0.06
+
+  while not rospy.is_shutdown():
+    if not leader_laser.ready:
+      print("***1")
+      rate_limiter.sleep()
+      continue
+
+    if not leg_detector.ready:
+      print("***2")
+      rate_limiter.sleep()
+      continue
+
+    if not slam.ready:
+      print("***3")
+      rate_limiter.sleep()
+      continue
+
+    leader_pose = slam.get_pose(LEADER)
+    if leader_pose is None:
+      rate_limiter.sleep()
+      continue
+
+    l_res = leader_laser.cluster_environment()
+    lrs = l_res[LIDAR_ROBOTS]
+    lobs = l_res[LIDAR_OBSTACLES]
+    lall = l_res[LIDAR_ALL]
+
+    f1_res = follower_lasers[0].cluster_environment()
+    f1rs = f1_res[LIDAR_ROBOTS]
+    f1obs = f1_res[LIDAR_OBSTACLES]
+    f1all = f1_res[LIDAR_ALL]
+
+    f2_res = follower_lasers[1].cluster_environment()
+    f2rs = f2_res[LIDAR_ROBOTS]
+    f2obs = f2_res[LIDAR_OBSTACLES]
+    f2all = f2_res[LIDAR_ALL]
+
+    # print()
+    print("ROBOTS FROM LEADER PERSPECTIVE:", lrs)
+    print("ROBOTS FROM FOLLOWER1 PERSPECTIVE:", f1rs)
+    print("ROBOTS FROM FOLLOWER2 PERSPECTIVE:", f2rs)
+
+    print()
+
+    # if the robots can't see eachother (with the leader seeing at least one follower)
+    if not (len(lrs) > 0 and ((len(f1rs) > 0 and len(f2rs) > 1) or (len(f2rs) > 0 and len(f1rs) > 1))):
+      speed_coefficient = np.abs(speed_coefficient) * 0.95
+      f_publishers[0].publish(stop_msg)
+      f_publishers[1].publish(stop_msg)
+      rate_limiter.sleep()
+      continue
+    else:
+      speed_coefficient = 1.
+
+    # match the observed robots from the lidar to {leader, follower1, follower2}
+    matcher = ThreeRobotMatcher(lrs, f1rs, f2rs)
+    fps = matcher.followers
+    ffs = matcher.ff
+
+    # find the leg wrt the leader
+    leg_cart, leg_pol = leg_detector.find_leg(fps, ffs)
+
+    print("LEG POLAR WRT LEADER", leg_pol)
+
+    if leg_pol is None:
+      vel_msg_l = stop_msg
+    else:
+      # convert to slam frame
+      leg_slam_phi = leg_pol[1] + leader_pose[2]
+      leg_slam = leader_pose[:-1] + ThreeRobotMatcher.pol2cart(leg_pol[0] - 0.2, leg_slam_phi)
+
+      # get the velocity to the leg
+      gf = GoalFollower(leg_slam, leader_pose)
+      vel_msg_l = gf.get_velocity(slam.occupancy_grid)
+
+    l_publisher.publish(vel_msg_l) if not STOP else l_publisher.publish(stop_msg)
+
+    # initiate the control class
+    control = RobotControl(fps, vel_msg_l, zs_desired)
+
+    # get the follower velocities calling the desired control algo
+    # ffs indicate that the two followers can see each other
+    if ffs is not None:
+      # velocities = control.three_robot(max_speed, max_angular, ffs)
+      velocities = control.basic(max_speed, max_angular)
+    else:
+      velocities = control.basic(max_speed, max_angular)
+
+    for i, f_publisher in enumerate(f_publishers):
       f_publisher.publish(velocities[i]) if not STOP else f_publisher.publish(stop_msg)
 
     rate_limiter.sleep()
@@ -1464,4 +1767,4 @@ def run2():
     rate_limiter.sleep()
 
 if __name__ == '__main__':
-  run()
+  run1()
