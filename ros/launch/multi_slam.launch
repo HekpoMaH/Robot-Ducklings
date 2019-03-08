@@ -41,10 +41,11 @@
     <group if="$(arg not_relative)">
         <!--map merge -->
         <include file="$(find project)/ros/launch/multi_map_merge.launch"/>
-        <node pkg="tf" type="static_transform_publisher" name="map_broadcaster" args="0 0 0 0 0 0 map occupancy_grid 100" />
         <!-- leg detect -->
         <include file="$(find project)/ros/launch/leg_detector.launch"/>
     </group>
+
+    <node pkg="tf" type="static_transform_publisher" name="map_broadcaster" args="0 0 0 0 0 0 tb3_0/map occupancy_grid 100" />
 
     <!-- rviz -->
     <group if="$(arg open_rviz)">
