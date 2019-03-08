@@ -466,73 +466,6 @@ class LegDetector2(object):
     for i, person in enumerate(msg.people):
       self._predictions.append(person)
 
-
-    # leader_pose = self._slam.get_pose(LEADER)
-    # print(leader_pose)
-    # # f_pose = [None, None]
-    # # f_pose[0] = self._slam.get_pose(FOLLOWERS[0])
-    # # f_pose[1] = self._slam.get_pose(FOLLOWERS[1])
-    # # print('msg is', msg)
-    # # # if it is tagged then it is not a person, but a robot
-    # # tags = [False] * len(msg.people)
-    # # for follower_pos in f_pose:
-    # #     min_idx = -1
-    # #     min_len = 1e9
-    # #     for i, person in enumerate(msg.people):
-    # #         person_pos = np.array([person.pos.x, person.pos.y])
-    # #         if vector_length(person_pos-follower_pos[:2]) < min_len:
-    # #             min_idx = i
-    # #             min_len = vector_length(person_pos-follower_pos[:2])
-    #
-    # #     if len(msg.people) != 0:
-    # #         tags[min_idx] = True
-    #
-    # highest_reliability = -1e9
-    # highest_reliable_person = None
-    # # print("messages are", msg.people)
-    # # This one below just discards the follower to leader (r,phi) TODO confirm that [0]th element of the followers is always coordinate of follower relative to leader
-    # relative_coords = [relative_coord[0] for relative_coord in self.other_robots]
-    # print("other robots are", relative_coords)
-    #
-    # robots_in_slam_coords = [
-    #                   # TODO If I didn't get the geometry wrong (50% chance), these should give coordinate of followers in global
-    #         np.array([leader_pose[X] + relative_coord[0]*np.cos(leader_pose[YAW]+relative_coord[1]),
-    #                   leader_pose[Y] + relative_coord[0]*np.sin(leader_pose[YAW]+relative_coord[1])])
-    #         for relative_coord in relative_coords]
-    #
-    # print("leader in SLAM", leader_pose)
-    # print("robots in SLAM", robots_in_slam_coords)
-    #
-    # print("distances to each detected leg")
-    # for j, robots in enumerate(robots_in_slam_coords):
-    #     print("\tROBO", j)
-    #     for i, person in enumerate(msg.people):
-    #         print("\t\t ", i, "->", vector_length(robots-np.array([person.pos.x, person.pos.y])))
-    #
-    # for i, person in enumerate(msg.people):
-    #
-    #     # if tags[i] == True:
-    #     #     continue
-    #
-    #     if person.reliability > highest_reliability:
-    #         highest_reliable_person = person
-    #         highest_reliability = person.reliability
-    #
-    # if highest_reliable_person is None:
-    #     return
-    #
-    # x = highest_reliable_person.pos.x
-    # y = highest_reliable_person.pos.y
-    #
-    # # Sometimes this is a bit off
-    # # print("\t This is assumed to be the person")
-    # # print("\t X", x)
-    # # print("\t Y", y)
-    # # print()
-    #
-    # self._position[X] = x
-    # self._position[Y] = y
-
   @property
   def ready(self):
     return self._ready
@@ -1139,6 +1072,8 @@ class GoalFollower(object):
 
   last_path_calc = 0
   path = []
+  frame_id = 0
+  path_publisher = rospy.Publisher('/path', Path, queue_size=1)
 
   def __init__(self, goal_pos, leader_pose):
     self._goal_pos = goal_pos
@@ -1146,9 +1081,10 @@ class GoalFollower(object):
 
   def get_velocity(self, occupancy_grid):
 
+    goal_min = 0.05
     vel_msg = Twist()
 
-    if np.linalg.norm(self._goal_pos - self._leader_pose[:-1]) < 0.1:
+    if np.linalg.norm(self._goal_pos - self._leader_pose[:-1]) < goal_min:
       vel_msg.linear.x = 0
       vel_msg.angular.z = 0
       return vel_msg
@@ -1160,24 +1096,29 @@ class GoalFollower(object):
     current_time = rospy.Time.now().to_sec()
     if current_time - self.last_path_calc > 2.:
 
+      print("LEADER POSE", self._leader_pose)
+      print("GOAL POS", self._goal_pos)
+
       start_node, final_node = rrt.rrt_star(self._leader_pose, self._goal_pos, occupancy_grid)
       self.path = self.get_path(final_node)
       self.last_path_cal = current_time
 
       # # Publish path to RViz.
-      # path_msg = Path()
-      # path_msg.header.seq = frame_id
-      # path_msg.header.stamp = rospy.Time.now()
-      # path_msg.header.frame_id = 'map'
-      # for u in current_path:
-      #   pose_msg = PoseStamped()
-      #   pose_msg.header.seq = frame_id
-      #   pose_msg.header.stamp = path_msg.header.stamp
-      #   pose_msg.header.frame_id = 'map'
-      #   pose_msg.pose.position.x = u[X]
-      #   pose_msg.pose.position.y = u[Y]
-      #   path_msg.poses.append(pose_msg)
-      # path_publisher.publish(path_msg)
+      path_msg = Path()
+      path_msg.header.seq = self.frame_id
+      path_msg.header.stamp = rospy.Time.now()
+      path_msg.header.frame_id = '/tb3_0/map'
+      for u in self.path:
+        pose_msg = PoseStamped()
+        pose_msg.header.seq = self.frame_id
+        pose_msg.header.stamp = path_msg.header.stamp
+        pose_msg.header.frame_id = '/tb3_0/map'
+        pose_msg.pose.position.x = u[X]
+        pose_msg.pose.position.y = u[Y]
+        path_msg.poses.append(pose_msg)
+      self.path_publisher.publish(path_msg)
+
+      self.frame_id += 1
 
     u, w = 0, 0
 
@@ -1195,6 +1136,15 @@ class GoalFollower(object):
     vel_msg.angular.z = w
 
     return vel_msg
+
+  # def find_free_close(self):
+  #   rand = np.random.rand(2)
+  #   pos = leg_detector.position + rand
+  #   while not slam.occupancy_grid.is_free(pos):
+  #     rand = np.random.rand(2)
+  #     pos = leg_detector.position + rand
+  #
+  #   return pos
 
   def calc_velocity(self, position, path_points):
     v = np.zeros_like(position)
