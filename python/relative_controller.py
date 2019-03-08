@@ -576,7 +576,7 @@ class ThreeRobotMatcher(object):
 
       followers[o_i] = (om_l, om_f)
 
-    else:  # leader can see both followers
+    else:  # leader can see both followersss
 
       f1_set = []
       f2_set = []
