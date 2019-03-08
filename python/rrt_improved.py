@@ -25,7 +25,7 @@ ROBOT_RADIUS = 0.105 / 2.
 GOAL_POSITION = np.array([1.5, 1.5], dtype=np.float32)  # Any orientation is good.
 START_POSE = np.array([-1.5, -1.5, 0.], dtype=np.float32)
 # MAX_ITERATIONS = 500
-MAX_ITERATIONS = 100
+MAX_ITERATIONS = 200
 
 PREV_POS = np.array([1., 1.], dtype=np.float32)
 
@@ -281,7 +281,7 @@ def rrt_star(start_pose, goal_position, occupancy_grid):
   for _ in range(MAX_ITERATIONS):
     position = sample_random_position(occupancy_grid)
     # With a random chance, draw the goal position.
-    if np.random.rand() < .0001:
+    if np.random.rand() < .05:
       position = goal_position
     # Find closest node in graph.
     # In practice, one uses an efficient spatial structure (e.g., quadtree).

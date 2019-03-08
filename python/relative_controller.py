@@ -66,6 +66,10 @@ FOLLOWERS = ['tb3_1', 'tb3_2']
 FOLLOWER_1 = 'tb3_1'
 FOLLOWER_2 = 'tb3_2'
 
+F1_INDEX = 0
+F2_INDEX = 1
+
+
 
 class SimpleLaser(object):
   def __init__(self, robot_name, braitenberg = False):
@@ -1311,7 +1315,7 @@ speed_coefficient = 1.
 
 
 
-STOP = False
+STOP = True
 
 def run():
   global zs_desired
