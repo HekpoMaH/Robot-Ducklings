@@ -806,8 +806,8 @@ class RobotControl(object):
 
     k = np.array([0.45, 0.24])
     d = 0.05
-    angular_coeff = 5
-    speed_coeff = 5
+    angular_coeff = 3
+    speed_coeff = 2
 
     velocities = [0] * 2
 
@@ -1104,7 +1104,10 @@ class GoalFollower(object):
       print("GOAL POS", self._goal_pos)
 
       start_node, final_node = rrt.rrt_star(self._leader_pose, self._goal_pos, occupancy_grid)
-      self.path = self.get_path(final_node)
+      new_path = self.get_path(final_node)
+      if new_path is not None:
+        self.path = new_path
+
       self.last_path_cal = current_time
 
       # # Publish path to RViz.
@@ -1126,7 +1129,8 @@ class GoalFollower(object):
 
     u, w = 0, 0
 
-    print("PATH", self.path)
+    if len(self.path) != 0:
+      print("**PATH FOUND")
 
     if len(self.path) > 0:
       v = self.calc_velocity(position, np.array(self.path, dtype=np.float32))
@@ -1315,7 +1319,7 @@ speed_coefficient = 1.
 
 
 
-STOP = True
+STOP = False
 
 def run():
   global zs_desired
@@ -1544,8 +1548,8 @@ def run1():
     rate_limiter.sleep()
     i += 1
 
-  max_speed = 0.06
-  max_angular = 0.06
+  max_speed = 0.04
+  max_angular = 0.04
 
   while not rospy.is_shutdown():
     if not leader_laser.ready:
@@ -1570,18 +1574,12 @@ def run1():
 
     l_res = leader_laser.cluster_environment()
     lrs = l_res[LIDAR_ROBOTS]
-    lobs = l_res[LIDAR_OBSTACLES]
-    lall = l_res[LIDAR_ALL]
 
     f1_res = follower_lasers[0].cluster_environment()
     f1rs = f1_res[LIDAR_ROBOTS]
-    f1obs = f1_res[LIDAR_OBSTACLES]
-    f1all = f1_res[LIDAR_ALL]
 
     f2_res = follower_lasers[1].cluster_environment()
     f2rs = f2_res[LIDAR_ROBOTS]
-    f2obs = f2_res[LIDAR_OBSTACLES]
-    f2all = f2_res[LIDAR_ALL]
 
     # print()
     print("ROBOTS FROM LEADER PERSPECTIVE:", lrs)
