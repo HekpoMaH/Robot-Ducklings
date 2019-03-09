@@ -1023,20 +1023,9 @@ class ThreeRobotMatcher(object):
   def diff_set(self):
 
     # diff = []
-
-    follower_lfs = [lf for (lf, _) in self._followers]
+    print(self._followers)
+    follower_lfs = [f[0] for f in self._followers if f is not None]
     diff_set = [diff for diff in self._lrs if diff not in follower_lfs]
-
-    # for lf in self._lrs:
-    #   if not lf in
-    #
-    # print("INSIDE DIFF SET FUNC")
-    # for (lf, _) in self._followers:
-    #
-    #   print(lf)
-    #
-    #   if not lf in self._lrs:
-    #     diff.append(lf)
 
     return diff_set
 
