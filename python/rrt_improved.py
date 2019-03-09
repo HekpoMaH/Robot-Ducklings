@@ -271,6 +271,11 @@ def rrt(start_pose, goal_position, occupancy_grid):
 
 def rrt_star(start_pose, goal_position, occupancy_grid):
   # RRT builds a graph one node at a time.
+
+  MIN_D = 0.1
+  MAX_D = 1.5
+  MAX_ANGLE = 2*np.pi / 3
+
   graph = []
   start_node = Node(start_pose)
   final_node = None
@@ -290,7 +295,7 @@ def rrt_star(start_pose, goal_position, occupancy_grid):
     # We also verify that the angles are aligned (within pi / 4).
     x_nearest = None
     for n, d in potential_parent:
-      if d > .2 and d < 1.5 and n.direction.dot(position - n.position) / d > 0.70710678118:
+      if d > MIN_D and d < MAX_D and n.direction.dot(position - n.position) / d > np.cos(MAX_ANGLE):
         x_nearest = n
         break
     else:
@@ -304,7 +309,7 @@ def rrt_star(start_pose, goal_position, occupancy_grid):
     def near(x, r):
       potential_near = sorted(((n, np.linalg.norm(x.position - n.position)) for n in graph), key=lambda x: x[1])
       truncated_near = [n for n, d in potential_near if
-                        d != 0 and d <= r and n.direction.dot(x.position - n.position) / d > 0.70710678118]
+                        d != 0 and d <= r and n.direction.dot(x.position - n.position) / d > np.cos(MAX_ANGLE)]
       return truncated_near
 
     X_near = near(x_new, r=1.)
