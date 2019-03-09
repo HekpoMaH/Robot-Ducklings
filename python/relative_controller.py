@@ -82,6 +82,11 @@ CIRCLE_ANGLE_STD = 0.15
 LEG_RADIUS = 0.07
 LEG_FUZZ = 0.025
 
+# Potential field scaling velocities
+SCALE_POTENTIAL_FORWARD = 0.88
+SCALE_POTENTIAL_ROTATIONAL = 0.56
+POTENTIAL_FIELD_FORCE = 0.005
+
 # LegDetector
 HUMAN_MIN = 1.0
 HUMAN_MAX = 3.5
@@ -435,9 +440,16 @@ class LegDetector(object):
     self._last_legs = [None, None]
     self._last_leg_cnt = 0
     self._last_leg_sz = 2
+    self._start_of_predict = None
+    self._last_leg_store = None
 
   def _predict_leg(self):
+    if self._start_of_predict is None:
+        self._start_of_predict = rospy.Time.now().to_sec()
+
     leg = [None ,None]
+    if abs(self._start_of_predict - rospy.Time.now().to_sec()) > 10.:
+        return leg
     print('last legs', self._last_legs)
     if self._last_legs[0] is None and self._last_legs[1] is None:
       return leg 
@@ -553,8 +565,12 @@ class LegDetector(object):
 
     print('leg[0]', leg[0])
     if leg[0] is not None:
-      self._last_legs[self._last_leg_cnt % self._last_leg_sz] = leg[0]
-      self._last_leg_cnt += 1
+      if self._last_leg_store is None:
+          self._last_leg_store = rospy.Time.now().to_sec()
+
+      if rospy.Time.now().to_sec() - self._last_leg_store > 2.:
+        self._last_legs[self._last_leg_cnt % self._last_leg_sz] = leg[0]
+        self._last_leg_cnt += 1
     else:
       leg = self._predict_leg()
 
@@ -1181,7 +1197,7 @@ class RobotControl(object):
       dist -= obstacle_radius
       return dist
 
-    def get_velocity_to_avoid_obstacles(position, obstacle_positions, obstacle_radii, q_star=0.35):
+    def get_velocity_to_avoid_obstacles(position, obstacle_positions, obstacle_radii, q_star=0.25):
       v = np.zeros(2, dtype=np.float32)
 
       # If an obstacle is further away, (more than Q*) it should not
@@ -1215,7 +1231,7 @@ class RobotControl(object):
         # the gradient's magnitude goes
         # towards infinity.
 
-        vec *= 0.005*(q_star-d)/d
+        vec *= POTENTIAL_FIELD_FORCE*(q_star-d)/d
 
         v += vec
 
@@ -1235,8 +1251,8 @@ class RobotControl(object):
           tot += vec
 
       up, wp = GoalFollower.feedback_linearized(pose, tot, .2)
-      up *= .28
-      wp *= .26
+      up *= SCALE_POTENTIAL_FORWARD
+      wp *= SCALE_POTENTIAL_ROTATIONAL
       print('\t \t total', up, wp)
       return up, wp
 
@@ -1245,13 +1261,12 @@ class RobotControl(object):
 
 
     vel_msgs = self.basic(max_speed, max_angular)
-    print('basic vels', vel_msgs)
+    # print('basic vels', vel_msgs)
     for i, follower in enumerate(self._followers):
         # Position of robot relative to it's own frame is always [0., 0., 0.]
         # print('\t lidar all', obstacles_for_each_robot[i])
         print('\t', i, 'potential from obstacles')
         ut, wt = get_potential_speed([0., 0., 0.], *zip(*obstacles_for_each_robot[i]))
-        print('\t', i, 'potential from other robots')
         # ut2, wt2 = get_potential_speed([0., 0., 0.], *zip(*obstacles_for_each_robot[i][LIDAR_ROBOTS]))
         vel_msgs[i].linear.x += ut #+ 0.1 * ut2
         vel_msgs[i].angular.z += wt# + 0.1 * wt2
@@ -1296,8 +1311,9 @@ class GoalFollower(object):
 
       start_node, final_node = rrt.rrt_star(self._leader_pose, self._goal_pos, occupancy_grid)
       new_path = self.get_path(final_node)
+      print('path is', self.path)
       if len(new_path) > 0.:
-        self.path = new_path
+        GoalFollower.path = new_path
 
       self.last_path_cal = current_time
 
@@ -1316,7 +1332,7 @@ class GoalFollower(object):
         path_msg.poses.append(pose_msg)
       self.path_publisher.publish(path_msg)
 
-      self.frame_id += 1
+      GoalFollower.frame_id += 1
 
     u, w = 0, 0
 
@@ -1833,8 +1849,8 @@ def run1():
     #   # velocities = control.three_robot_with_potential_field(max_speed, max_angular, [f1_all, f2_all])
     # else:
     #   velocities = control.basic(max_speed, max_angular)
-    velocities = control.basic(max_speed, max_angular)
-    # velocities = control.three_robot_with_potential_field(max_speed, max_angular, [f1_all, f2_all])
+    # velocities = control.basic(max_speed, max_angular)
+    velocities = control.three_robot_with_potential_field(max_speed, max_angular, [f1_all, f2_all])
 
     for i, f_publisher in enumerate(f_publishers):
       f_publisher.publish(velocities[i]) if not STOP else f_publisher.publish(stop_msg)
