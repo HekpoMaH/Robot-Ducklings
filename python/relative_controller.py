@@ -85,7 +85,7 @@ LIDAR_RADIUS_GAP = 0.05
 CIRCLE_ANGLE_MEAN_MIN = 1.4
 CIRCLE_ANGLE_MEAN_MAX = 1.6
 CIRCLE_ANGLE_STD = 0.15
-LEG_EPSILON = 0.25
+LEG_EPSILON = 0.35
 LEG_RADIUS = 0.075
 LEG_FUZZ = 0.04
 
@@ -528,13 +528,13 @@ class LegDetector(object):
 
       
       close_enough = False
-      for r, theta in lrs_legs:
+      for leg in lrs_legs:
           
-          l_pos = np.array([(r + LEG_RADIUS) * np.cos(theta),
-                            (r + LEG_RADIUS) * np.sin(theta)])
+          # l_pos = np.array([(r + LEG_RADIUS) * np.cos(theta),
+          #                   (r + LEG_RADIUS) * np.sin(theta)])
 
-          print("Distance:", vector_length(l_pos-pos), end='')
-          if vector_length(l_pos-pos) < LEG_EPSILON:
+          print("Distance:", vector_length(ThreeRobotMatcher.pol2cart(*leg)-pos), end='')
+          if vector_length(ThreeRobotMatcher.pol2cart(*leg)-pos) < LEG_EPSILON:
             close_enough = True
           
       print('len', len(lrs_legs))
