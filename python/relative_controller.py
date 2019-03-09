@@ -70,7 +70,7 @@ F1_INDEX = 0
 F2_INDEX = 1
 
 # LegDetector2
-HUMAN_MIN = 1.2
+HUMAN_MIN = 1.0
 HUMAN_MAX = 3.5
 HUMAN_CONE = np.pi
 MIN_SEPARATION_DIST = 0.2
@@ -79,7 +79,7 @@ MIN_SEPARATION_DIST = 0.2
 MAX_RR_DIFF = 0.15
 
 # run
-GOAL_FROM_LEG = 0.15
+GOAL_FROM_LEG = 0.20
 
 STOP = False
 
@@ -490,6 +490,8 @@ class LegDetector2(object):
     # leg=B + (B-A)
     leg[0] = 2*self._last_legs[self._last_leg_cnt % self._last_leg_sz] - self._last_legs[(self._last_leg_sz + self._last_leg_cnt - 1) % self._last_leg_sz]
     leg[1] = ThreeRobotMatcher.cart2pol(*leg[0])
+
+    return leg
 
   def find_leg(self, fps, ffs):
 
@@ -1278,7 +1280,7 @@ class GoalFollower(object):
 
       start_node, final_node = rrt.rrt_star(self._leader_pose, self._goal_pos, occupancy_grid)
       new_path = self.get_path(final_node)
-      if new_path is not None:
+      if len(new_path) > 0.:
         self.path = new_path
 
       self.last_path_cal = current_time
