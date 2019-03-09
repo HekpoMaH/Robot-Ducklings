@@ -80,9 +80,7 @@ CIRCLE_ANGLE_MEAN_MIN = 1.4
 CIRCLE_ANGLE_MEAN_MAX = 1.6
 CIRCLE_ANGLE_STD = 0.15
 
-
-
-# LegDetector2
+# LegDetector
 HUMAN_MIN = 1.0
 HUMAN_MAX = 3.5
 HUMAN_CONE = np.pi
@@ -90,6 +88,8 @@ MIN_SEPARATION_DIST = 0.2
 
 # ThreeRobotMatcher
 MAX_RR_DIFF = 0.15
+
+
 
 # run
 GOAL_FROM_LEG = 0.20
@@ -361,7 +361,7 @@ class SimpleLaser(object):
       cart_cl_k = [np.array([dist * np.cos(ang), dist * np.sin(ang)]) for (dist, ang) in cl_k]
       angles = np.zeros(len(cart_cl_k) - 2)
       extrem_1 = cart_cl_k[0]
-      extrem_2 = cart_cl_k[len(cart_cl_k) - 2]
+      extrem_2 = cart_cl_k[len(cart_cl_k) - 1]
 
       for i in range(1, len(cart_cl_k) - 1):
         point = cart_cl_k[i]
@@ -429,7 +429,8 @@ class LegDetector(object):
     if self._last_legs[0] is None and self._last_legs[1] is None:
       return leg 
     # leg=B + (B-A)
-    leg[0] = 2*self._last_legs[self._last_leg_cnt % self._last_leg_sz] - self._last_legs[(self._last_leg_sz + self._last_leg_cnt - 1) % self._last_leg_sz]
+    leg[0] = 2 * self._last_legs[self._last_leg_cnt % self._last_leg_sz] - self._last_legs[
+      (self._last_leg_sz + self._last_leg_cnt - 1) % self._last_leg_sz]
     leg[1] = ThreeRobotMatcher.cart2pol(*leg[0])
 
     return leg
@@ -563,10 +564,6 @@ class LegDetector(object):
   def position(self):
     return self._position
 
-  # @other_robots.setter
-  def set_other_robots(self, other_robots):
-    self.other_robots = other_robots
-
 
 class SLAM(object):
   def __init__(self):
@@ -681,6 +678,7 @@ class ThreeRobotMatcher(object):
         self._mfrs.append((i, r))
 
     self._match()
+    # self._match2()
 
   @staticmethod
   def cart2pol(x, y):
@@ -693,6 +691,74 @@ class ThreeRobotMatcher(object):
     x = rho * np.cos(phi)
     y = rho * np.sin(phi)
     return np.array([x, y])
+
+  def _match2(self):
+
+    followers = [None, None]
+
+    lrs = self._lrs
+    f1_set = self._frs[0]
+    f2_set = self._frs[1]
+
+    perms = list(itertools.product(lrs, f1_set, f2_set))
+
+    type_triangle = 0
+    type_f1lf2 = 1
+    type_lf1f2 = 2
+    type_lf2f1 = 3
+    type_na = 4
+
+    res = []
+
+    for perm in perms:
+
+      leader = perm[0]
+      f1 = perm[1]
+      f2 = perm[2]
+
+      lf1 = np.abs(leader[0] - f1[0])
+      lf2 = np.abs(leader[0] - f2[0])
+      f1f2 = np.abs(f1[0] - f2[0])
+
+      if lf1 < MAX_RR_DIFF and lf2 < MAX_RR_DIFF and f1f2 < MAX_RR_DIFF:
+        # this is a triangle - all robots can see each other
+
+        scaled_diff = (lf1 + lf2 + f1f2) / 3
+        res.append((type_triangle, scaled_diff, (leader, f1), (leader, f2), (f1, f2)))
+
+      elif lf1 < MAX_RR_DIFF and lf2 < MAX_RR_DIFF:
+        # this is a line with leader in the middle
+
+        scaled_diff = (lf1 + lf2) / 2
+        res.append((type_f1lf2, scaled_diff, (leader,f1), (leader, f2)))
+
+      elif lf1 < MAX_RR_DIFF and f1f2 < MAX_RR_DIFF:
+        # this is a line with follower1 in the middle
+
+        scaled_diff = (lf1 + lf2) / 2
+        res.append((type_lf1f2, scaled_diff, (leader, f1), (f1, f2)))
+
+      elif lf2 < MAX_RR_DIFF and f1f2 < MAX_RR_DIFF:
+        # this is a line with follower2 in the middle
+
+        scaled_diff = (lf1 + f1f2) / 2
+        res.append((type_lf2f1, scaled_diff, (leader, f2), (f1, f2)))
+      else:
+        # this is nothing of interest
+        scaled_diff = (lf1 + lf2 + f1f2) / 3
+        res.append((type_na, scaled_diff, leader, f1, f2))
+
+    sorted_res = sorted(res, key=lambda x: x[1])
+
+    print("MATCH 2 MATCHES")
+    for res in sorted_res:
+      print("\t", res)
+
+    print()
+    print()
+
+    # print("***MATCH2 BEST", best)
+
 
   def _match(self):
 
@@ -712,10 +778,6 @@ class ThreeRobotMatcher(object):
       middle_match = middle_matches[0]
       m_i = middle_match[0]
       followers[m_i] = (middle_match[3], middle_match[2])
-
-      # match = matches[0]
-      # m_i = match[0]
-      # followers[m_i] = (self._lrs[0], match[3])
 
       # match_f_cart is cartesian vector from middle follower to leader (in mf frame)
       # match_l_cart is cartesian vector from leader to middle follower (in leader frame)
@@ -739,8 +801,8 @@ class ThreeRobotMatcher(object):
       om_l_cart = match_l_cart + of_cart
       om_f_cart = match_f_cart + off_cart
 
-      om_l = self.cart2pol(*om_l_cart)
-      om_f = self.cart2pol(*om_f_cart)
+      om_l = tuple(self.cart2pol(*om_l_cart))
+      om_f = tuple(self.cart2pol(*om_f_cart))
 
       print("**LINE")
 
@@ -2008,4 +2070,4 @@ def run3():
 
 
 if __name__ == '__main__':
-  run1()
+  run2()
