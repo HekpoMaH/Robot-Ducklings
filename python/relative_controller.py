@@ -76,7 +76,7 @@ LIDAR_ALL = 2
 LIDAR_RAW = 3
 LIDAR_LEGS = 4
 OUTLIER_THRESH = 0.25
-MAX_SEARCH_DIST = 3.5
+MAX_SEARCH_DIST = 2.8
 MIN_LASER_POINTS = 3
 CLUSTER_BOUNDARY_DIST = 0.05
 CLUSTER_ANGLE_MULT = 1.1
@@ -84,8 +84,8 @@ LIDAR_RADIUS_GAP = 0.05
 CIRCLE_ANGLE_MEAN_MIN = 1.4
 CIRCLE_ANGLE_MEAN_MAX = 1.6
 CIRCLE_ANGLE_STD = 0.15
-LEG_RADIUS = 0.08
-LEG_FUZZ = 0.025
+LEG_RADIUS = 0.075
+LEG_FUZZ = 0.04
 
 # Potential field scaling velocities
 SCALE_POTENTIAL_FORWARD = 0.88
@@ -362,7 +362,12 @@ class SimpleLaser(object):
         obstacles.append(cl_k)
 
         if self._robot_name == LEADER:
-          print("POSSIBLE LEG AT R", center_d, " THETA", min(cl_k, key = lambda x: x[0])[1])
+
+          leg_pol = min(cl_k, key=lambda x: x[0])
+          leg_cart = ThreeRobotMatcher.pol2cart(*leg_pol)
+
+          print("POSSIBLE LEG AT R", center_d + LEG_RADIUS, " THETA", min(cl_k, key = lambda x: x[0])[1])
+          print("or Cartesian", leg_cart)
           print("A SPAN", a_span)
 
 
@@ -718,6 +723,7 @@ class ThreeRobotMatcher(object):
     self._mfrs = []
     self._followers = []
     self._ff = None
+    self._diff_set = []
 
     for i, set in enumerate(self._frs):
       for r in set:
@@ -986,6 +992,28 @@ class ThreeRobotMatcher(object):
   @property
   def ff(self):
     return self._ff
+
+  @property
+  def diff_set(self):
+
+    # diff = []
+
+    follower_lfs = [lf for (lf, _) in self._followers]
+    diff_set = [diff for diff in self._lrs if diff not in follower_lfs]
+
+    # for lf in self._lrs:
+    #   if not lf in
+    #
+    # print("INSIDE DIFF SET FUNC")
+    # for (lf, _) in self._followers:
+    #
+    #   print(lf)
+    #
+    #   if not lf in self._lrs:
+    #     diff.append(lf)
+
+    return diff_set
+
 
 
 class RobotControl(object):
@@ -1924,6 +1952,10 @@ def run2():
       print("\t", leg[0], '...', leg[len(leg) - 1])
     print()
 
+    print("POTENTIAL ROBOTS")
+    for rob in lrs:
+      print("\t", rob)
+    print()
 
     f1_res = follower_lasers[0].cluster_environment()
     f1rs = f1_res[LIDAR_ROBOTS]
@@ -1952,6 +1984,11 @@ def run2():
     matcher = ThreeRobotMatcher(lrs, f1rs, f2rs)
     fps = matcher.followers
     ffs = matcher.ff
+    diff_set = matcher.diff_set
+
+    print("DIFF SET")
+    for d in diff_set:
+      print("\t", d)
 
     # if the matcher cant find a good match, slow the leader
     if fps[0] is None or fps[1] is None:
