@@ -102,6 +102,7 @@ HUMAN_MIN = 1.0
 HUMAN_MAX = 3.5
 HUMAN_CONE = np.pi
 MIN_SEPARATION_DIST = 0.2
+USE_LEG_DETECTOR = False
 
 # ThreeRobotMatcher
 MAX_RR_DIFF = 0.15
@@ -509,7 +510,10 @@ class LegDetector(object):
     # ffs - follower to follower pos tions
     # return both cart and polar
     #copy predictions in case it gets rewritten during evalution of this func
-    unfiltered_preds = list(self._predictions)
+    if USE_LEG_DETECTOR == False:
+      unfiltered_preds = lrs_legs
+    else:
+      unfiltered_preds = list(self._predictions)
     preds = []
 
     print("PREDS BEFORE FILTER", len(unfiltered_preds))
