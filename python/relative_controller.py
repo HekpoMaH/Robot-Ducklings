@@ -948,6 +948,12 @@ class RobotControl(object):
       if z[1] < 0.:
         z[1] += 2 * np.math.pi
 
+      print("FOLLOWER ", i)
+      print()
+
+      print("LF", lf)
+      print("FL", fl)
+
       # this gets the angle between the bearing of the leader and follower (from frame of follower)
       beta = np.pi + fl[1] - lf[1]
       b1 = -np.pi + lf[1] - fl[1]
@@ -955,16 +961,21 @@ class RobotControl(object):
       b3 = fl[1] - lf[1]
       b4 = np.pi - lf[1] - fl[1]
       b5 = 2*np.pi - beta
+      b6 = -b5
+
       print("BETA", beta)
       print("B1", b1)
       print("B2", b2)
       print("B3", b3)
       print("B4",b4)
-      print("B5", 2*np.pi - beta)
+      print("B5", b5)
+      print("B6", b6)
       beta = b5
 
+      print()
+
       gamma = beta + z[1]
-      gamma = beta - z[1]
+      # gamma = beta - z[1]
 
       # print("z[0] l_12", z[0])
       # print("z[1] psi_ij", z[1])
