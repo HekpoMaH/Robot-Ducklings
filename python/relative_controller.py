@@ -153,7 +153,7 @@ class SimpleLaser(object):
       b %= pi2
       if a < b:
         return a <= x and x <= b
-      return a <= x or x <= b;
+      return a <= x or x <= b
 
     # Compute indices the first time.
     if self._indices is None:
@@ -513,13 +513,15 @@ class LegDetector(object):
     if USE_LEG_DETECTOR == False:
       unfiltered_preds = lrs_legs
     else:
-      unfiltered_preds = list(self._predictions)
+      unfiltered_preds = [(p.pos.x, p.pos.y) for p in list(self._predictions)]
     preds = []
+
+
 
     print("PREDS BEFORE FILTER", len(unfiltered_preds))
 
     for pred in unfiltered_preds:
-      pos = np.array([pred.pos.x, pred.pos.y])
+      pos = list(pred)
       print("POSITION IS", pos)
       pos_pol = ThreeRobotMatcher.cart2pol(*pos)
 
@@ -611,7 +613,7 @@ class LegDetector(object):
         lf_pol = follower[0]
 
         person_pred = perm[1]
-        pos = np.array([person_pred.pos.x, person_pred.pos.y])
+        pos = list(person_pred)
 
         lf_cart = ThreeRobotMatcher.pol2cart(*lf_pol)
 
