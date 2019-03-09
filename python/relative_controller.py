@@ -77,7 +77,7 @@ LIDAR_ALL = 2
 LIDAR_RAW = 3
 LIDAR_LEGS = 4
 OUTLIER_THRESH = 0.25
-MAX_SEARCH_DIST = 3.5
+MAX_SEARCH_DIST = 2.8
 MIN_LASER_POINTS = 3
 CLUSTER_BOUNDARY_DIST = 0.05
 CLUSTER_ANGLE_MULT = 1.1
@@ -85,8 +85,8 @@ LIDAR_RADIUS_GAP = 0.05
 CIRCLE_ANGLE_MEAN_MIN = 1.4
 CIRCLE_ANGLE_MEAN_MAX = 1.6
 CIRCLE_ANGLE_STD = 0.15
-LEG_RADIUS = 0.08
-LEG_FUZZ = 0.025
+LEG_RADIUS = 0.90
+LEG_FUZZ = 0.035
 LEG_EPSILON = 0.1
 
 # Potential field scaling velocities
@@ -479,7 +479,7 @@ class LegDetector(object):
 
     return leg
 
-  def find_leg(self, fps, ffs, lrs_legs):
+  def find_leg(self, fps, ffs, lrs_legs=[]):
 
     # fps - follower to leader positions
     # ffs - follower to follower pos tions
@@ -488,10 +488,11 @@ class LegDetector(object):
     unfiltered_preds = list(self._predictions)
     preds = []
 
-    # print("PREDS BEFORE FILTER", len(unfiltered_preds))
+    print("PREDS BEFORE FILTER", len(unfiltered_preds))
 
     for pred in unfiltered_preds:
       pos = np.array([pred.pos.x, pred.pos.y])
+      print("POSITION IS", pos)
       pos_pol = ThreeRobotMatcher.cart2pol(*pos)
 
       # print("PRED")
@@ -499,7 +500,7 @@ class LegDetector(object):
       r = pos_pol[0]
       phi = pos_pol[1]
 
-      # print("R", r, "PHI", phi)
+      print("R", r, "PHI", phi)
 
       if phi > np.pi:
         phi -= 2*np.pi
@@ -509,24 +510,22 @@ class LegDetector(object):
       if r < HUMAN_MIN or r > HUMAN_MAX or np.abs(phi) > HUMAN_CONE/2:
         continue
 
-      # print("PRED ADDED")
+      print("PRED ADDED")
 
       
       close_enough = False
-      for leg_boundary in lrs_legs:
-          min_r, min_theta = (1e9, 1e9)
-          for r, theta in leg_boundary:
-            if r < min_r:
-              min_r = r
-              min_theta = theta
+      for r, theta in lrs_legs:
           
-          min_pos = np.array([(min_r + LEG_RADIUS) * np.cos(min_theta),
-                              (min_r + LEG_RADIUS) * np.sin(min_theta)])
+          l_pos = np.array([(r + LEG_RADIUS) * np.cos(theta),
+                            (r + LEG_RADIUS) * np.sin(theta)])
 
-          if vector_length(min_pos-pos) < LEG_EPSILON:
+          print("Distance:", vector_length(l_pos-pos), end='')
+          if vector_length(l_pos-pos) < LEG_EPSILON:
             close_enough = True
           
-      if close_enough:
+      print('len', len(lrs_legs))
+      if close_enough or len(lrs_legs) == 0:
+        print("A")
         preds.append(pred)
 
     leg = [None ,None]
@@ -2123,4 +2122,4 @@ def run3():
 
 
 if __name__ == '__main__':
-  run2()
+  run1()
