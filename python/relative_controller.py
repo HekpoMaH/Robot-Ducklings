@@ -81,6 +81,11 @@ CIRCLE_ANGLE_MEAN_MAX = 1.6
 CIRCLE_ANGLE_STD = 0.15
 LEG_RADIUS = 0.05
 
+# Potential field scaling velocities
+SCALE_POTENTIAL_FORWARD = 0.88
+SCALE_POTENTIAL_ROTATIONAL = 0.56
+POTENTIAL_FIELD_FORCE = 0.005
+
 # LegDetector
 HUMAN_MIN = 1.0
 HUMAN_MAX = 3.5
@@ -1212,7 +1217,7 @@ class RobotControl(object):
         # the gradient's magnitude goes
         # towards infinity.
 
-        vec *= 0.005*(q_star-d)/d
+        vec *= POTENTIAL_FIELD_FORCE*(q_star-d)/d
 
         v += vec
 
@@ -1232,8 +1237,8 @@ class RobotControl(object):
           tot += vec
 
       up, wp = GoalFollower.feedback_linearized(pose, tot, .2)
-      up *= .88
-      wp *= .56
+      up *= SCALE_POTENTIAL_FORWARD
+      wp *= SCALE_POTENTIAL_ROTATIONAL
       print('\t \t total', up, wp)
       return up, wp
 
