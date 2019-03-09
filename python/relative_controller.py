@@ -88,7 +88,7 @@ LIDAR_RADIUS_GAP = 0.05
 CIRCLE_ANGLE_MEAN_MIN = 1.4
 CIRCLE_ANGLE_MEAN_MAX = 1.6
 CIRCLE_ANGLE_STD = 0.15
-LEG_EPSILON = 0.25
+LEG_EPSILON = 0.35
 LEG_RADIUS = 0.075
 LEG_FUZZ = 0.04
 
@@ -102,6 +102,7 @@ HUMAN_MIN = 1.0
 HUMAN_MAX = 3.5
 HUMAN_CONE = np.pi
 MIN_SEPARATION_DIST = 0.2
+USE_LEG_DETECTOR = False
 
 # ThreeRobotMatcher
 MAX_RR_DIFF = 0.15
@@ -509,18 +510,18 @@ class LegDetector(object):
     # ffs - follower to follower pos tions
     # return both cart and polar
     #copy predictions in case it gets rewritten during evalution of this func
-    unfiltered_preds = [tuple(ThreeRobotMatcher.cart2pol(pred.pos.x, pred.pos.y)) for pred in list(self._predictions)]
+    if USE_LEG_DETECTOR == False:
+      unfiltered_preds = lrs_legs
+    else:
+      unfiltered_preds = list(self._predictions)
     preds = []
 
     print("PREDS BEFORE FILTER", len(unfiltered_preds))
 
     for pred in unfiltered_preds:
-      # pos = np.array([pred.pos.x, pred.pos.y])
-
-      # pos_pol = ThreeRobotMatcher.cart2pol(*pos)
-      pos_pol = pred
-      print("POSITION IS (POLAR)", pos_pol)
-      pos = ThreeRobotMatcher.pol2cart(*pos_pol)
+      pos = np.array([pred.pos.x, pred.pos.y])
+      print("POSITION IS", pos)
+      pos_pol = ThreeRobotMatcher.cart2pol(*pos)
 
       # print("PRED")
 
@@ -541,13 +542,13 @@ class LegDetector(object):
 
       
       close_enough = False
-      for r, theta in lrs_legs:
+      for leg in lrs_legs:
           
-          l_pos = np.array([(r + LEG_RADIUS) * np.cos(theta),
-                            (r + LEG_RADIUS) * np.sin(theta)])
+          # l_pos = np.array([(r + LEG_RADIUS) * np.cos(theta),
+          #                   (r + LEG_RADIUS) * np.sin(theta)])
 
-          print("Distance:", vector_length(l_pos-pos), end='')
-          if vector_length(l_pos-pos) < LEG_EPSILON:
+          print("Distance:", vector_length(ThreeRobotMatcher.pol2cart(*leg)-pos), end='')
+          if vector_length(ThreeRobotMatcher.pol2cart(*leg)-pos) < LEG_EPSILON:
             close_enough = True
           
       print('len', len(lrs_legs))
@@ -581,9 +582,8 @@ class LegDetector(object):
 
         # print("FF_POL", ff_pol)
 
-        pred_pol = perm[2]
-        pos = ThreeRobotMatcher.pol2cart(*pred_pol)
-
+        person_pred = perm[2]
+        pos = np.array([person_pred.pos.x, person_pred.pos.y])
 
         lf_cart = ThreeRobotMatcher.pol2cart(*lf_pol)
         ff_cart = ThreeRobotMatcher.pol2cart(*ff_pol)
@@ -610,8 +610,8 @@ class LegDetector(object):
         follower = perm[0]
         lf_pol = follower[0]
 
-        pred_pol = perm[1]
-        pos = ThreeRobotMatcher.pol2cart(*pred_pol)
+        person_pred = perm[1]
+        pos = np.array([person_pred.pos.x, person_pred.pos.y])
 
         lf_cart = ThreeRobotMatcher.pol2cart(*lf_pol)
 
@@ -1042,6 +1042,7 @@ class ThreeRobotMatcher(object):
     diff_set = [diff for diff in self._lrs if diff not in follower_lfs]
 
     return diff_set
+
 
 
 class RobotControl(object):
@@ -1576,7 +1577,6 @@ class GoalFollower(object):
 
     return u, w
 
-
 def run():
   global ZS_DESIRED
   global SPEED_COEFFICIENT
@@ -1774,7 +1774,8 @@ def run():
     rate_limiter.sleep()
 
 def run1():
-  global SPEED_COEFFICIENT
+  # global ZS_DESIRED
+  # global SPEED_COEFFICIENT
 
   rospy.init_node('robot_controller')
   rate_limiter = rospy.Rate(ROSPY_RATE)
