@@ -74,7 +74,7 @@ HUMAN_MAX = 3.5
 HUMAN_CONE = np.pi
 MIN_SEPARATION_DIST = 0.2
 
-STOP = False
+STOP = True
 
 class SimpleLaser(object):
   def __init__(self, robot_name, braitenberg = False):
@@ -482,9 +482,24 @@ class LegDetector2(object):
     self._predictions = []
     self.other_robots = []
     self._ready = False
+    self._last_legs = [None, None]
+    self._last_leg_cnt = 0
+    self._last_leg_sz = 2
+
+  def _predict_leg(self):
+    leg = [None ,None]
+    print('last legs', self._last_legs)
+    if self._last_legs[0] is None and self._last_legs[1] is None:
+      return leg 
+    # leg=B + (B-A)
+    leg[0] = 2*self._last_legs[self._last_leg_cnt % self._last_leg_sz] - self._last_legs[(self._last_leg_sz + self._last_leg_cnt - 1) % self._last_leg_sz]
+    leg[1] = ThreeRobotMatcher.cart2pol(*leg[0])
 
   def find_leg(self, fps, ffs):
 
+    # fps - follower to leader positions
+    # ffs - follower to follower pos tions
+    # return both cart and polar
     #copy predictions in case it gets rewritten during evalution of this func
     unfiltered_preds = list(self._predictions)
     preds = []
@@ -514,10 +529,11 @@ class LegDetector2(object):
 
       preds.append(pred)
 
-    leg = (None ,None)
+    leg = [None ,None]
 
+    print('predictions', preds)
     if len(preds) == 0:
-      return leg
+      return self._predict_leg()
 
     # print("NUMBER OF PREDS AFTER FILTER", len(preds))
 
@@ -582,6 +598,13 @@ class LegDetector2(object):
           error = diff
           leg = (pos, ThreeRobotMatcher.cart2pol(*pos))
 
+    print('leg[0]', leg[0])
+    if leg[0] is not None:
+      self._last_legs[self._last_leg_cnt % self._last_leg_sz] = leg[0]
+      self._last_leg_cnt += 1
+    else:
+      leg = self._predict_leg()
+
     return leg
 
   def callback(self, msg):
@@ -616,9 +639,11 @@ class SLAM(object):
   def callback(self, msg):
     print("SLAM CALLBACK CALLED")
     values = np.array(msg.data, dtype=np.int8).reshape((msg.info.width, msg.info.height))
+
+    print(values.shape)
     processed = np.empty_like(values)
     processed[:] = rrt.FREE
-    processed[values < 0] = rrt.UNKNOWN
+    processed[values < 0] = rrt.FREE
     processed[values > 50] = rrt.OCCUPIED
     processed = processed.T
     origin = [msg.info.origin.position.x, msg.info.origin.position.y, 0.]
@@ -962,14 +987,15 @@ class RobotControl(object):
       b4 = np.pi - lf[1] - fl[1]
       b5 = 2*np.pi - beta
       b6 = -b5
-
+      b7 = lf[1] +fl[1] - np.pi
       print("BETA", beta)
       print("B1", b1)
       print("B2", b2)
       print("B3", b3)
-      print("B4",b4)
+      print("B4", b4)
       print("B5", b5)
       print("B6", b6)
+      print("B7", b7)
       beta = b5
 
       print()
@@ -1790,6 +1816,8 @@ def run2():
   rospy.init_node('robot_controller')
   rate_limiter = rospy.Rate(ROSPY_RATE)
 
+  slam = SLAM()
+  leg_detector = LegDetector2()
   l_publisher = rospy.Publisher('/' + LEADER + '/cmd_vel', Twist, queue_size=5)
   f_publishers = [None] * len(FOLLOWERS)
   for i, follower in enumerate(FOLLOWERS):
@@ -1820,6 +1848,11 @@ def run2():
       rate_limiter.sleep()
       continue
 
+    if not leg_detector.ready:
+      print("***2")
+      rate_limiter.sleep()
+      continue
+
     # print('measurments', leader_laser.measurements)
     # u, w = rule_based(*leader_laser.measurements)
     u, w = obstacle_avoidance.braitenberg(*leader_laser.measurements)
@@ -1831,6 +1864,7 @@ def run2():
     vel_msg_l.angular.z = np.clip(w, -max_speed, max_speed)
     l_publisher.publish(vel_msg_l) if not STOP else l_publisher.publish(stop_msg)
 
+    leader_pose = slam.get_pose(LEADER)
     # print()
     # print("LEADER: FINDING ROBOTS")
     l_res = leader_laser.cluster_environment()
@@ -1871,6 +1905,8 @@ def run2():
     matcher = ThreeRobotMatcher(lrs, f1rs, f2rs)
     fps = matcher.followers
     ffs = matcher.ff
+    leg_cart, leg_pol = leg_detector.find_leg(fps, ffs)
+    print('leg discovered at', leg_cart)
 
     # initiate the control class
     control = RobotControl(fps, vel_msg_l, zs_desired)
