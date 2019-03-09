@@ -1779,6 +1779,7 @@ def run1():
 
     l_res = leader_laser.cluster_environment()
     lrs = l_res[LIDAR_ROBOTS]
+    lrs_legs = l_res[LIDAR_LEGS]
 
     f1_res = follower_lasers[0].cluster_environment()
     f1rs = f1_res[LIDAR_ROBOTS]
