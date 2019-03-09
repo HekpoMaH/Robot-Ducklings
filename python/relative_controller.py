@@ -79,7 +79,8 @@ LIDAR_RADIUS_GAP = 0.05
 CIRCLE_ANGLE_MEAN_MIN = 1.4
 CIRCLE_ANGLE_MEAN_MAX = 1.6
 CIRCLE_ANGLE_STD = 0.15
-LEG_RADIUS = 0.05
+LEG_RADIUS = 0.07
+LEG_FUZZ = 0.025
 
 # LegDetector
 HUMAN_MIN = 1.0
@@ -193,6 +194,7 @@ class SimpleLaser(object):
     robots = []
     obstacles = []
     all = []
+    legs = []
 
 
     def delete_outliers(s):
@@ -348,6 +350,16 @@ class SimpleLaser(object):
           # print("\t ...")
           # print("\t ", cl_k[len(cl_k)-1])
         obstacles.append(cl_k)
+
+        # this code predicts the legs in the scene
+        e_span_leg = 2 * self.boundary_circ_angle(center_d + LEG_RADIUS - LEG_FUZZ,
+                                                  LIDAR_RADIUS - LEG_FUZZ)
+        e_span_leg_p = 2 * self.boundary_circ_angle(center_d + LEG_RADIUS + LEG_FUZZ,
+                                                  LIDAR_RADIUS + LEG_FUZZ)
+
+        if a_span > e_span_leg and a_span < e_span_leg_p:
+          legs.append(cl_k)
+
         continue
       # else:
       #   if self._robot_name == LEADER:
@@ -355,6 +367,7 @@ class SimpleLaser(object):
       #     print("\t ", cl_k[0])
       #     print("\t ...")
       #     print("\t ", cl_k[len(cl_k) - 1])
+
 
       # size of cluster is close to robot. Now check that points are circular using Internal Angle Variance (IAV)
       cart_cl_k = [np.array([dist * np.cos(ang), dist * np.sin(ang)]) for (dist, ang) in cl_k]
@@ -404,6 +417,7 @@ class SimpleLaser(object):
     result[LIDAR_ROBOTS] = robots
     result[LIDAR_OBSTACLES] = obstacles
     result[LIDAR_ALL] = all
+    result[LIDAR_LEGS] = legs
 
     # if self._robot_name == LEADER:
     #   print("LEADER_RESULT LENGTH", len(result))
