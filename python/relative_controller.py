@@ -584,8 +584,8 @@ class LegDetector(object):
 
         # print("FF_POL", ff_pol)
 
-        person_pred = perm[2]
-        pos = np.array([person_pred.pos.x, person_pred.pos.y])
+        pred = perm[2]
+        pos = pred
 
         lf_cart = ThreeRobotMatcher.pol2cart(*lf_pol)
         ff_cart = ThreeRobotMatcher.pol2cart(*ff_pol)
