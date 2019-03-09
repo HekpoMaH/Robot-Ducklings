@@ -69,7 +69,12 @@ FOLLOWER_2 = 'tb3_2'
 F1_INDEX = 0
 F2_INDEX = 1
 
+HUMAN_MIN = 1.2
+HUMAN_MAX = 3.5
+HUMAN_CONE = np.pi
+MIN_SEPARATION_DIST = 0.2
 
+STOP = True
 
 class SimpleLaser(object):
   def __init__(self, robot_name, braitenberg = False):
@@ -83,6 +88,7 @@ class SimpleLaser(object):
     self._increment = None
     self._ranges = None
     self._bb = braitenberg
+    self._robot_name = robot_name
 
   def callback(self, msg):
     # Helper for angles.
@@ -203,11 +209,51 @@ class SimpleLaser(object):
 
       return res
 
+    def get_lidar_fuzz(d):
+
+      lf = 0.01
+      uf = 0.01
+
+      # if d < 0.2:
+      #   uf = 0.02
+      # elif d < 0.3:
+      #   uf = 0.015
+      # elif d < 0.7:
+      #   uf = 0.01
+      # elif d < 0.9:
+      #   uf = 0.015
+      # elif d < 1.2:
+      #   uf = 0.0125
+      # elif d < 1.4:
+      #   uf = 0.014
+      # else:
+      #   uf = 0.01
+
+      if d < 0.2:
+        uf = 0.025
+      elif d < 0.3:
+        uf = 0.02
+      elif d < 0.7:
+        uf = 0.015
+      elif d < 0.9:
+        uf = 0.02
+      elif d < 1.2:
+        uf = 0.0175
+      elif d < 1.4:
+        uf = 0.0175
+      else:
+        uf = 0.015
+
+
+      return lf, uf
+
+
     max_dist = 2.5
     min_points = 3
     t_sec = 0.05
     cluster_angle_mult = 1.1
     lidar_radius_fuzz = 0.01
+    lidar_radius_gap = 0.05
     shape_mean_min = 1.4
     shape_mean_max = 1.6
     shape_std = 0.15
@@ -268,38 +314,45 @@ class SimpleLaser(object):
       if diff_ang < 0:
         diff_ang = diff_ang + np.pi * 2
 
+      lower_fuzz, upper_fuzz = get_lidar_fuzz(center_d)
+
       a_span = diff_ang + increment * 2
-      e_span_lidar = 2 * self.boundary_circ_angle(center_d + LIDAR_RADIUS + lidar_radius_fuzz,
-                                                  LIDAR_RADIUS + lidar_radius_fuzz)
-      e_span_lidar_p = 2 * self.boundary_circ_angle(center_d + LIDAR_RADIUS + 0.05 - lidar_radius_fuzz,
-                                                    LIDAR_RADIUS + 0.05 - lidar_radius_fuzz)
+      e_span_lidar = 2 * self.boundary_circ_angle(center_d + LIDAR_RADIUS + lower_fuzz,
+                                                  LIDAR_RADIUS + lower_fuzz)
+      e_span_lidar_p = 2 * self.boundary_circ_angle(center_d + LIDAR_RADIUS + lidar_radius_gap - upper_fuzz,
+                                                    LIDAR_RADIUS + lidar_radius_gap - upper_fuzz)
 
       # e_span = 2 * self.boundary_circ_angle(center_d + ROBOT_RADIUS, ROBOT_RADIUS)
       # e_rect_span = 2 * self.boundary_rect_angle(center_d, ROBOT_WIDTH)
       # e_rect_lidar = 2 * self.boundary_rect_angle(center_d, 2 * LIDAR_RADIUS)
       # e_rect_lidar_p = 2 * self.boundary_rect_angle(center_d, 2 * (LIDAR_RADIUS+lidar_radius_fuzz))
 
-      # print("CENTER D", center_d)
-      # print("A SPAN", a_span)
-      # print("E SPAN", e_span)
-      # print("E SPAN LIDAR", e_span_lidar)
-      # print("E RECT SPAN", e_rect_span)
-      # print("E SPAN LIDAR P", e_span_lidar_p)
-      # print("E RECT LIDAR", e_rect_lidar)
-      # print("E RECT LIDAR", e_rect_lidar_p)
-      # print()
+      # if self._robot_name == LEADER:
+      #   print("CENTER D", center_d)
+      #   print("A SPAN", a_span)
+        # print("E SPAN", e_span)
+        # print("E SPAN LIDAR", e_span_lidar)
+        # print("E RECT SPAN", e_rect_span)
+        # print("E SPAN LIDAR P", e_span_lidar_p)
+        # print("E RECssT LIDAR", e_rect_lidar)
+        # print("E RECT LIDAR", e_rect_lidar_p)
+        # print()
 
       # if np.abs(a_span - e_span_lidar) > 3 * increment:
       if a_span < e_span_lidar or a_span > e_span_lidar_p:
-        # print("PURGING CLUSTER (1) AS OBSTACLE")
-        # for c in cl_k:
-        #   print("\t ", c)
+        # if self._robot_name == LEADER:
+          # print("PURGING CLUSTER (1) AS OBSTACLE")
+          # print("\t ", cl_k[0])
+          # print("\t ...")
+          # print("\t ", cl_k[len(cl_k)-1])
         obstacles.append(cl_k)
         continue
       # else:
-        # print("KEEPING CLUSTER (1)")
-        # for c in cl_k:
-        #   print("\t ", c)
+      #   if self._robot_name == LEADER:
+      #     print("KEEPING CLUSTER (1)")
+      #     print("\t ", cl_k[0])
+      #     print("\t ...")
+      #     print("\t ", cl_k[len(cl_k) - 1])
 
       # size of cluster is close to robot. Now check that points are circular using Internal Angle Variance (IAV)
       cart_cl_k = [np.array([dist * np.cos(ang), dist * np.sin(ang)]) for (dist, ang) in cl_k]
@@ -345,6 +398,9 @@ class SimpleLaser(object):
     result[LIDAR_ROBOTS] = robots
     result[LIDAR_OBSTACLES] = obstacles
     result[LIDAR_ALL] = all
+
+    # if self._robot_name == LEADER:
+    #   print("LEADER_RESULT LENGTH", len(result))
 
     return result
 
@@ -430,34 +486,101 @@ class LegDetector2(object):
   def find_leg(self, fps, ffs):
 
     #copy predictions in case it gets rewritten during evalution of this func
-    preds = list(self._predictions)
+    unfiltered_preds = list(self._predictions)
+    preds = []
 
-    fpreds = list(itertools.product(fps, preds))
-    error = 0
-    leg = None
+    # print("PREDS BEFORE FILTER", len(unfiltered_preds))
 
-    print("LEG PERMS")
+    for pred in unfiltered_preds:
+      pos = np.array([pred.pos.x, pred.pos.y])
+      pos_pol = ThreeRobotMatcher.cart2pol(*pos)
 
-    for perm in fpreds:
+      # print("PRED")
 
-      follower = perm[0]
-      lf_pol = follower[0]
+      r = pos_pol[0]
+      phi = pos_pol[1]
 
-      person_pred = perm[1]
-      pos = np.array([person_pred.pos.x, person_pred.pos.y])
+      # print("R", r, "PHI", phi)
 
-      lf_cart = ThreeRobotMatcher.pol2cart(*lf_pol)
+      if phi > np.pi:
+        phi -= 2*np.pi
+      if phi < -np.pi:
+        phi += 2*np.pi
 
-      print("\t follower", lf_pol)
-      print('\t possible leg', ThreeRobotMatcher.cart2pol(*pos))
-      print()
+      if r < HUMAN_MIN or r > HUMAN_MAX or np.abs(phi) > HUMAN_CONE/2:
+        continue
 
+      # print("PRED ADDED")
 
-      diff = np.linalg.norm(pos - lf_cart)
+      preds.append(pred)
 
-      if diff > error:
-        error = diff
-        leg = (pos, ThreeRobotMatcher.cart2pol(*pos))
+    leg = (None ,None)
+
+    if len(preds) == 0:
+      return leg
+
+    # print("NUMBER OF PREDS AFTER FILTER", len(preds))
+
+    if ffs is not None and len(ffs) != 0:
+      ffs = [ffs]
+      # print("FFS", ffs)
+
+      fpreds = list(itertools.product(fps, ffs, preds))
+      error = 2 * MIN_SEPARATION_DIST
+
+      # print("LEG PERMS")
+
+      for perm in fpreds:
+
+        follower = perm[0]
+        lf_pol = follower[0]
+
+        ff_pol = perm[1]
+
+        # print("FF_POL", ff_pol)
+
+        person_pred = perm[2]
+        pos = np.array([person_pred.pos.x, person_pred.pos.y])
+
+        lf_cart = ThreeRobotMatcher.pol2cart(*lf_pol)
+        ff_cart = ThreeRobotMatcher.pol2cart(*ff_pol)
+
+        # print("\t follower", lf_pol)
+        # print('\t possible leg', ThreeRobotMatcher.cart2pol(*pos))
+        # print()
+
+        diff = np.linalg.norm(pos - lf_cart) + np.linalg.norm(pos - ff_cart)
+
+        if diff > error:
+          error = diff
+          leg = (pos, ThreeRobotMatcher.cart2pol(*pos))
+
+    else:
+
+      fpreds = list(itertools.product(fps, preds))
+      error = MIN_SEPARATION_DIST
+
+      # print("LEG PERMS")
+
+      for perm in fpreds:
+
+        follower = perm[0]
+        lf_pol = follower[0]
+
+        person_pred = perm[1]
+        pos = np.array([person_pred.pos.x, person_pred.pos.y])
+
+        lf_cart = ThreeRobotMatcher.pol2cart(*lf_pol)
+
+        # print("\t follower", lf_pol)
+        # print('\t possible leg', ThreeRobotMatcher.cart2pol(*pos))
+        # print()
+
+        diff = np.linalg.norm(pos - lf_cart)
+
+        if diff > error:
+          error = diff
+          leg = (pos, ThreeRobotMatcher.cart2pol(*pos))
 
     return leg
 
@@ -806,8 +929,8 @@ class RobotControl(object):
 
     k = np.array([0.45, 0.24])
     d = 0.05
-    angular_coeff = 3
-    speed_coeff = 2
+    angular_coeff = 5
+    speed_coeff = 3
 
     velocities = [0] * 2
 
@@ -1307,8 +1430,8 @@ class GoalFollower(object):
     return u, w
 
 
-zs_desired = {FOLLOWERS[0]: np.array([0.5, 3.*np.math.pi/4.]),
-              FOLLOWERS[1]: np.array([1.2, 5.*np.math.pi/4.])}
+zs_desired = {FOLLOWERS[0]: np.array([0.3, 7.*np.math.pi/8.]),
+              FOLLOWERS[1]: np.array([0.8, 9.*np.math.pi/8.])}
 # right triangle, two sides 0.4
 #                  l12,  psi12          , l13,   l23
 # zs_both_desired = [zs_desired[FOLLOWERS[0]], zs_desired[FOLLOWERS[1]]]
@@ -1318,8 +1441,6 @@ extra_psis = [3.*np.math.pi/4., 5*np.math.pi/4.]
 speed_coefficient = 1.
 
 
-
-STOP = False
 
 def run():
   global zs_desired
