@@ -103,8 +103,17 @@ MIN_SEPARATION_DIST = 0.2
 # ThreeRobotMatcher
 MAX_RR_DIFF = 0.15
 
+# RobotControl
+BASIC_SPEED_COEFF = 6
+BASIC_ANGULAR_COEFF = 6
+BASIC_D = 0.05
+BASIC_K = np.array([0.45, 0.24])
+
 # run
 GOAL_FROM_LEG = 0.20
+GOAL_ZONE_RADIUS = 0.05
+MAX_SPEED = 0.1
+MAX_ANGULAR = 0.1
 
 STOP = False
 
@@ -1040,10 +1049,10 @@ class RobotControl(object):
 
   def basic(self, max_speed, max_angular):
 
-    k = np.array([0.45, 0.24])
-    d = 0.05
-    angular_coeff = 5
-    speed_coeff = 3
+    k = BASIC_K
+    d = BASIC_D
+    angular_coeff = BASIC_ANGULAR_COEFF
+    speed_coeff = BASIC_SPEED_COEFF
 
     velocities = [0] * 2
 
@@ -1243,7 +1252,7 @@ class RobotControl(object):
     return vel_msgs
     pass
 
-  def three_robot_with_potential_field(self, max_speed, max_angular, obstacles_for_each_robot):
+  def basic_with_potential_field(self, max_speed, max_angular, obstacles_for_each_robot):
 
     def cap(v, max_speed):
       n = np.linalg.norm(v)
@@ -1400,7 +1409,7 @@ class GoalFollower(object):
       print("**PATH FOUND")
 
     if len(self.path) > 0:
-      v = self.calc_velocity(position, np.array(self.path, dtype=np.float32))
+      v = self.calc_velocity(position, np.array(self.path, dtype=np.float32), MAX_SPEED)
       u, w = self.feedback_linearized(self._leader_pose, v, epsilon=EPSILON)
 
     print("U", u)
@@ -1412,16 +1421,7 @@ class GoalFollower(object):
 
     return vel_msg
 
-  # def find_free_close(self):
-  #   rand = np.random.rand(2)
-  #   pos = leg_detector.position + rand
-  #   while not slam.occupancy_grid.is_free(pos):
-  #     rand = np.random.rand(2)
-  #     pos = leg_detector.position + rand
-  #
-  #   return pos
-
-  def calc_velocity(self, position, path_points):
+  def calc_velocity(self, position, path_points, max_speed):
     v = np.zeros_like(position)
     if len(path_points) == 0:
       return v
@@ -1449,10 +1449,9 @@ class GoalFollower(object):
 
     """
 
-    SPEED = .1
     segment_size = 0.05  # a segment spans 5cm
     radius = 0.02  # the max distance either side of the path before the robot corrects
-    velocity_scale = SPEED  # scales the forward velocity (when not correcting)
+    velocity_scale = max_speed  # scales the forward velocity (when not correcting)
     target_offset = segment_size * 0.2  # distance of target point ahead of the closest point to robot on path
     correction_scale = 10  # scales the correcting velocity
     correction_min = 1 * velocity_scale  # minimum correcting velocity
@@ -1761,7 +1760,7 @@ def run():
     # velocities = control.basic(max_speed, max_angular)
     # velocities = control.three_robot(max_speed, max_angular)
     # print("F1ALL", f1all)
-    velocities = control.three_robot_with_potential_field(max_speed, max_angular, [f1all, f2all])
+    velocities = control.basic_with_potential_field(max_speed, max_angular, [f1all, f2all])
 
     for i, f_publisher in enumerate(f_publishers):
       print('follower', i, velocities[i].linear.x, velocities[i].angular.z)
@@ -1799,9 +1798,6 @@ def run1():
 
     rate_limiter.sleep()
     i += 1
-
-  max_speed = 0.04
-  max_angular = 0.04
 
   while not rospy.is_shutdown():
     if not leader_laser.ready:
@@ -1919,7 +1915,7 @@ def run1():
     # else:
     #   velocities = control.basic(max_speed, max_angular)
     # velocities = control.basic(max_speed, max_angular)
-    velocities = control.three_robot_with_potential_field(max_speed, max_angular, [f1_all, f2_all])
+    velocities = control.basic_with_potential_field(MAX_SPEED, MAX_ANGULAR, [f1_all, f2_all])
 
     for i, f_publisher in enumerate(f_publishers):
       f_publisher.publish(velocities[i]) if not STOP else f_publisher.publish(stop_msg)
