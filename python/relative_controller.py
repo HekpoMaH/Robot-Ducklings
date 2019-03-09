@@ -69,6 +69,19 @@ FOLLOWER_2 = 'tb3_2'
 F1_INDEX = 0
 F2_INDEX = 1
 
+# SimpleLaser
+OUTLIER_THRESH = 0.25
+MAX_SEARCH_DIST = 2.5
+MIN_LASER_POINTS = 3
+CLUSTER_BOUNDARY_DIST = 0.05
+CLUSTER_ANGLE_MULT = 1.1
+LIDAR_RADIUS_GAP = 0.05
+CIRCLE_ANGLE_MEAN_MIN = 1.4
+CIRCLE_ANGLE_MEAN_MAX = 1.6
+CIRCLE_ANGLE_STD = 0.15
+
+
+
 # LegDetector2
 HUMAN_MIN = 1.0
 HUMAN_MAX = 3.5
@@ -185,14 +198,13 @@ class SimpleLaser(object):
 
     def delete_outliers(s):
 
-      outlier_thresh = 0.25
       new_s = []
 
       for i, (d, a) in enumerate(s):
         d_next, a_next = s[np.mod(i+1, len(s))]
         d_prev, a_prev = s[np.mod(i+1, len(s))]
 
-        if  (np.abs(d - d_next) > outlier_thresh and np.abs(d - d_prev) > outlier_thresh):
+        if  (np.abs(d - d_next) > OUTLIER_THRESH and np.abs(d - d_prev) > OUTLIER_THRESH):
           continue
         new_s.append((d, a))
 
@@ -240,15 +252,14 @@ class SimpleLaser(object):
       return lf, uf
 
 
-    max_dist = 2.5
-    min_points = 3
-    t_sec = 0.05
-    cluster_angle_mult = 1.1
-    lidar_radius_fuzz = 0.01
-    lidar_radius_gap = 0.05
-    shape_mean_min = 1.4
-    shape_mean_max = 1.6
-    shape_std = 0.15
+    max_dist = MAX_SEARCH_DIST
+    min_points = MIN_LASER_POINTS
+    t_sec = CLUSTER_BOUNDARY_DIST
+    cluster_angle_mult = CLUSTER_ANGLE_MULT
+    lidar_radius_gap = LIDAR_RADIUS_GAP
+    shape_mean_min = CIRCLE_ANGLE_MEAN_MIN
+    shape_mean_max = CIRCLE_ANGLE_MEAN_MAX
+    shape_std = CIRCLE_ANGLE_STD
 
     s = [(dist, increment * index) for (index, dist) in enumerate(ranges)]
     s = delete_outliers(s)
@@ -402,76 +413,6 @@ class SimpleLaser(object):
 
 
 class LegDetector(object):
-  def __init__(self, fps, ffs):
-    rospy.Subscriber('/leg_tracker_measurements', PositionMeasurementArray, self.callback)
-    self._position = np.array([np.nan, np.nan], dtype=np.float32)
-    self._fps = fps
-    self._ffs = ffs
-
-  def callback(self, msg):
-
-
-
-    highest_reliability = -1e9
-    highest_reliable_person = None
-    # print("messages are", msg.people)
-    # This one below just discards the follower to leader (r,phi) TODO confirm that [0]th element of the followers is always coordinate of follower relative to leader
-    relative_coords = [relative_coord[0] for relative_coord in self.other_robots]
-    print("other robots are", relative_coords)
-
-    robots_in_slam_coords = [
-      # TODO If I didn't get the geometry wrong (50% chance), these should give coordinate of followers in global
-      np.array([leader_pose[X] + relative_coord[0] * np.cos(leader_pose[YAW] + relative_coord[1]),
-                leader_pose[Y] + relative_coord[0] * np.sin(leader_pose[YAW] + relative_coord[1])])
-      for relative_coord in relative_coords]
-
-    print("leader in SLAM", leader_pose)
-    print("robots in SLAM", robots_in_slam_coords)
-
-    print("distances to each detected leg")
-    for j, robots in enumerate(robots_in_slam_coords):
-      print("\tROBO", j)
-      for i, person in enumerate(msg.people):
-        print("\t\t ", i, "->", vector_length(robots - np.array([person.pos.x, person.pos.y])))
-
-    for i, person in enumerate(msg.people):
-
-      # if tags[i] == True:
-      #     continue
-
-      if person.reliability > highest_reliability:
-        highest_reliable_person = person
-        highest_reliability = person.reliability
-
-    if highest_reliable_person is None:
-      return
-
-    x = highest_reliable_person.pos.x
-    y = highest_reliable_person.pos.y
-
-    # Sometimes this is a bit off
-    # print("\t This is assumed to be the person")
-    # print("\t X", x)
-    # print("\t Y", y)
-    # print()
-
-    self._position[X] = x
-    self._position[Y] = y
-
-  @property
-  def ready(self):
-    return not np.isnan(self._position[0])
-
-  @property
-  def position(self):
-    return self._position
-
-  # @other_robots.setter
-  def set_other_robots(self, other_robots):
-    self.other_robots = other_robots
-
-
-class LegDetector2(object):
   def __init__(self):
     rospy.Subscriber('/leg_tracker_measurements', PositionMeasurementArray, self.callback)
     self._position = np.array([np.nan, np.nan], dtype=np.float32)
@@ -1705,7 +1646,7 @@ def run1():
   slam = SLAM()
   leader_laser = SimpleLaser(LEADER, True)
   follower_lasers = [SimpleLaser(FOLLOWER_1), SimpleLaser(FOLLOWER_2)]
-  leg_detector = LegDetector2()
+  leg_detector = LegDetector()
 
   stop_msg = Twist()
   stop_msg.linear.x = 0.
@@ -1948,7 +1889,7 @@ def run3():
   rate_limiter = rospy.Rate(ROSPY_RATE)
 
   slam = SLAM()
-  leg_detector = LegDetector2()
+  leg_detector = LegDetector()
   l_publisher = rospy.Publisher('/' + LEADER + '/cmd_vel', Twist, queue_size=5)
   f_publishers = [None] * len(FOLLOWERS)
   for i, follower in enumerate(FOLLOWERS):
