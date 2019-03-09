@@ -85,6 +85,7 @@ LIDAR_RADIUS_GAP = 0.05
 CIRCLE_ANGLE_MEAN_MIN = 1.4
 CIRCLE_ANGLE_MEAN_MAX = 1.6
 CIRCLE_ANGLE_STD = 0.15
+LEG_EPSILON = 0.1
 LEG_RADIUS = 0.90
 LEG_RADIUS = 0.075
 LEG_FUZZ = 0.04
@@ -483,6 +484,15 @@ class LegDetector(object):
     leg[1] = ThreeRobotMatcher.cart2pol(*leg[0])
 
     return leg
+
+  def convert_lidar_to_legs(self, lls):
+
+    plegs = []
+    for ll in lls:
+      min_v = min(ll, key=lambda x: x[0])
+      plegs.append((min_v[0] + LEG_RADIUS, min_v[1]))
+
+    return plegs
 
   def find_leg(self, fps, ffs, lrs_legs=[]):
 
@@ -1865,6 +1875,7 @@ def run1():
     matcher = ThreeRobotMatcher(lrs, f1rs, f2rs)
     fps = matcher.followers
     ffs = matcher.ff
+    diffs = matcher.diff_set
 
     # if the matcher cant find a good match, stop all the robots
     if fps[0] is None or fps[1] is None:
@@ -1874,8 +1885,24 @@ def run1():
       rate_limiter.sleep()
       continue
 
+    # convert potential legs to single (r,theta)
+    plegs = leg_detector.convert_lidar_to_legs(lrs_legs)
+
+    print("PLEGS")
+    for a in plegs:
+      print("\t", a)
+
+    print("DIFFS")
+    for a in diffs:
+      print("\t", a)
+
+    print("CONVERTED SET")
+    c = plegs + diffs
+    for a in c:
+      print("\t", a)
+
     # find the leg wrt the leader
-    leg_cart, leg_pol = leg_detector.find_leg(fps, ffs, lrs_legs)
+    leg_cart, leg_pol = leg_detector.find_leg(fps, ffs, plegs + diffs)
 
     print("LEG POLAR WRT LEADER", leg_pol)
 
