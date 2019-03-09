@@ -64,6 +64,11 @@ FOLLOWER_2 = 'tb3_2'
 F1_INDEX = 0
 F2_INDEX = 1
 
+ZS_DESIRED = {FOLLOWERS[0]: np.array([0.3, 7. * np.math.pi / 8.]),
+              FOLLOWERS[1]: np.array([0.8, 9.*np.math.pi/8.])}
+
+SPEED_COEFFICIENT = 1.
+
 # SimpleLaser
 LIDAR_ROBOTS = 0
 LIDAR_OBSTACLES = 1
@@ -71,7 +76,7 @@ LIDAR_ALL = 2
 LIDAR_RAW = 3
 LIDAR_LEGS = 4
 OUTLIER_THRESH = 0.25
-MAX_SEARCH_DIST = 2.5
+MAX_SEARCH_DIST = 3.5
 MIN_LASER_POINTS = 3
 CLUSTER_BOUNDARY_DIST = 0.05
 CLUSTER_ANGLE_MULT = 1.1
@@ -79,7 +84,7 @@ LIDAR_RADIUS_GAP = 0.05
 CIRCLE_ANGLE_MEAN_MIN = 1.4
 CIRCLE_ANGLE_MEAN_MAX = 1.6
 CIRCLE_ANGLE_STD = 0.15
-LEG_RADIUS = 0.07
+LEG_RADIUS = 0.08
 LEG_FUZZ = 0.025
 
 # Potential field scaling velocities
@@ -188,7 +193,7 @@ class SimpleLaser(object):
 
   def cluster_environment(self):
 
-    result = [[]]*4
+    result = [[]]*5
 
     if self._ranges is None:
       self._counter += 1
@@ -356,14 +361,26 @@ class SimpleLaser(object):
           # print("\t ", cl_k[len(cl_k)-1])
         obstacles.append(cl_k)
 
+        if self._robot_name == LEADER:
+          print("POSSIBLE LEG AT R", center_d, " THETA", min(cl_k, key = lambda x: x[0])[1])
+          print("A SPAN", a_span)
+
+
         # this code predicts the legs in the scene
         e_span_leg = 2 * self.boundary_circ_angle(center_d + LEG_RADIUS - LEG_FUZZ,
-                                                  LIDAR_RADIUS - LEG_FUZZ)
+                                                  LEG_RADIUS - LEG_FUZZ)
         e_span_leg_p = 2 * self.boundary_circ_angle(center_d + LEG_RADIUS + LEG_FUZZ,
-                                                  LIDAR_RADIUS + LEG_FUZZ)
+                                                  LEG_RADIUS + LEG_FUZZ)
+
+        if self._robot_name == LEADER:
+          print("E SPAN LEG", e_span_leg)
+          print("E SPAN LEG +", e_span_leg_p)
 
         if a_span > e_span_leg and a_span < e_span_leg_p:
+          print("FOUND LEG")
           legs.append(cl_k)
+        else:
+          print("NOT FOUND LEG")
 
         continue
       # else:
@@ -1001,28 +1018,28 @@ class RobotControl(object):
       if z[1] < 0.:
         z[1] += 2 * np.math.pi
 
-      print("FOLLOWER ", i)
-      print()
-
-      print("LF", lf)
-      print("FL", fl)
+      # print("FOLLOWER ", i)
+      # print()
+      #
+      # print("LF", lf)
+      # print("FL", fl)
 
       # this gets the angle between the bearing of the leader and follower (from frame of follower)
       beta = np.pi + fl[1] - lf[1]
-      b1 = -np.pi + lf[1] - fl[1]
-      b2 = lf[1] - fl[1]
-      b3 = fl[1] - lf[1]
-      b4 = np.pi - lf[1] - fl[1]
+      # b1 = -np.pi + lf[1] - fl[1]
+      # b2 = lf[1] - fl[1]
+      # b3 = fl[1] - lf[1]
+      # b4 = np.pi - lf[1] - fl[1]
       b5 = 2*np.pi - beta
       b6 = -b5
-      b7 = lf[1] +fl[1] - np.pi
-      print("BETA", beta)
-      print("B1", b1)
-      print("B2", b2)
-      print("B3", b3)
-      print("B4", b4)
-      print("B5", b5)
-      print("B6", b6)
+      # b7 = lf[1] +fl[1] - np.pi
+      # print("BETA", beta)
+      # print("B1", b1)
+      # print("B2", b2)
+      # print("B3", b3)
+      # print("B4", b4)
+      # print("B5", b5)
+      # print("B6", b6)
       beta = b6
 
       print()
@@ -1080,11 +1097,11 @@ class RobotControl(object):
     # r f2 to leader
     z[2] = f2l[0]
 
-    print("f1 <--> leader", z[0])
-    print("theta leader \/ f1", z[1])
-    print("f2 <--> leader", z[2])
-    print("theta leader \/ f2", lf2[1])
-    print("f1 <--true--> f2", ff12[0][0], ff12[1][0])
+    # print("f1 <--> leader", z[0])
+    # print("theta leader \/ f1", z[1])
+    # print("f2 <--> leader", z[2])
+    # print("theta leader \/ f2", lf2[1])
+    # print("f1 <--true--> f2", ff12[0][0], ff12[1][0])
 
     # r f1 to leader
     # inner_ang = np.abs(lf1[1] - lf2[1])
@@ -1098,12 +1115,12 @@ class RobotControl(object):
     # z[3] = (ff12[0][0] + ff12[1][0]) / 2
     z[3] = f1f2[0]
 
-    print("f1 <--> f2", z[3])
-
-    print("f1l[1]", f1l[1])
-    print("lf1[1]", lf1[1])
-    print("f2l[1]", f2l[1])
-    print("lf2[1]", lf2[1])
+    # print("f1 <--> f2", z[3])
+    #
+    # print("f1l[1]", f1l[1])
+    # print("lf1[1]", lf1[1])
+    # print("f2l[1]", f2l[1])
+    # print("lf2[1]", lf2[1])
 
     psi_12 = z[1]
     psi_13 = lf2[1]
@@ -1121,16 +1138,16 @@ class RobotControl(object):
     g_13 = b_13 + lf2[1]
     g_23 = b_23 + f1f2[1]
 
-    print()
-    print("z[0] l_12", z[0])
-    print("z[1] psi_12", z[1])
-    print("z[2] l_13", z[2])
-    print("z[3] l_23", z[3])
-    print("b_12", b_12)
-    print("b_13", b_13)
-    print("b_23", b_23)
-    print("psi_23", ff12[0][1])
-    print("psi_32", ff12[1][1])
+    # print()
+    # print("z[0] l_12", z[0])
+    # print("z[1] psi_12", z[1])
+    # print("z[2] l_13", z[2])
+    # print("z[3] l_23", z[3])
+    # print("b_12", b_12)
+    # print("b_13", b_13)
+    # print("b_23", b_23)
+    # print("psi_23", ff12[0][1])
+    # print("psi_32", ff12[1][1])
 
 
     d = 0.05
@@ -1156,18 +1173,18 @@ class RobotControl(object):
     zd = np.concatenate((self._desired_pose[FOLLOWERS[0]], l_arr), axis=0)
 
     k = np.array([0.45, 0.23, 0.45, 0.45])
-    print('\t z_desired', zd)
-    print("\t z_current", z)
-    print("\t z_diff", zd - z)
+    # print('\t z_desired', zd)
+    # print("\t z_current", z)
+    # print("\t z_diff", zd - z)
     p = k * (zd - z)
 
     speed_robot = np.array([self._leader_vel.linear.x, self._leader_vel.angular.z])
     speed_followers = np.matmul(np.linalg.inv(G), (p - np.matmul(F, speed_robot)))
 
-    print("\t p", p)
-    print("\t speed_followers")
-    for f in speed_followers:
-      print("\t\t",f)
+    # print("\t p", p)
+    # print("\t speed_followers")
+    # for f in speed_followers:
+    #   print("\t\t",f)
 
     vel_msgs = []
     vel_msg = Twist()
@@ -1513,22 +1530,9 @@ class GoalFollower(object):
 
     return u, w
 
-
-zs_desired = {FOLLOWERS[0]: np.array([0.3, 7.*np.math.pi/8.]),
-              FOLLOWERS[1]: np.array([0.8, 9.*np.math.pi/8.])}
-# right triangle, two sides 0.4
-#                  l12,  psi12          , l13,   l23
-# zs_both_desired = [zs_desired[FOLLOWERS[0]], zs_desired[FOLLOWERS[1]]]
-#              psi13,            psi23
-extra_psis = [3.*np.math.pi/4., 5*np.math.pi/4.]
-
-speed_coefficient = 1.
-
-
-
 def run():
-  global zs_desired
-  global speed_coefficient
+  global ZS_DESIRED
+  global SPEED_COEFFICIENT
 
   rospy.init_node('robot_controller')
   rate_limiter = rospy.Rate(ROSPY_RATE)
@@ -1692,13 +1696,13 @@ def run():
 
     # if the robots can't see eachother (with the leader seeing at least one follower)
     if not (len(lrs) > 0 and ((len(f1rs) > 0 and len(f2rs) > 1) or (len(f2rs) > 0 and len(f1rs) > 1))):
-      speed_coefficient = np.abs(speed_coefficient) * 0.95
+      SPEED_COEFFICIENT = np.abs(SPEED_COEFFICIENT) * 0.95
       f_publishers[0].publish(stop_msg)
       f_publishers[1].publish(stop_msg)
       rate_limiter.sleep()
       continue
     else:
-      speed_coefficient = 1.
+      SPEED_COEFFICIENT = 1.
 
     # match the observed robots from the lidar to {leader, follower1, follower2}
     matcher = ThreeRobotMatcher(lrs, f1rs, f2rs)
@@ -1708,7 +1712,7 @@ def run():
     leg_detector.set_other_robots(fps)
 
     # initiate the control class
-    control = RobotControl(fps, vel_msg_l, zs_desired)
+    control = RobotControl(fps, vel_msg_l, ZS_DESIRED)
 
     # get the follower velocities calling the desired control algo
     # velocities = control.basic(max_speed, max_angular)
@@ -1723,8 +1727,8 @@ def run():
     rate_limiter.sleep()
 
 def run1():
-  global zs_desired
-  global speed_coefficient
+  # global ZS_DESIRED
+  # global SPEED_COEFFICIENT
 
   rospy.init_node('robot_controller')
   rate_limiter = rospy.Rate(ROSPY_RATE)
@@ -1781,6 +1785,10 @@ def run1():
     lrs = l_res[LIDAR_ROBOTS]
     lrs_legs = l_res[LIDAR_LEGS]
 
+    print("LRS LEGS")
+    print(lrs_legs)
+    print()
+
     f1_res = follower_lasers[0].cluster_environment()
     f1rs = f1_res[LIDAR_ROBOTS]
     f1_raw = f1_res[LIDAR_RAW]
@@ -1800,13 +1808,13 @@ def run1():
 
     # if the robots can't see eachother (with the leader seeing at least one follower)
     if not (len(lrs) > 0 and ((len(f1rs) > 0 and len(f2rs) > 1) or (len(f2rs) > 0 and len(f1rs) > 1))):
-      speed_coefficient = np.abs(speed_coefficient) * 0.95
+      SPEED_COEFFICIENT = np.abs(SPEED_COEFFICIENT) * 0.95
       f_publishers[0].publish(stop_msg)
       f_publishers[1].publish(stop_msg)
       rate_limiter.sleep()
       continue
     else:
-      speed_coefficient = 1.
+      SPEED_COEFFICIENT = 1.
 
     # match the observed robots from the lidar to {leader, follower1, follower2}
     matcher = ThreeRobotMatcher(lrs, f1rs, f2rs)
@@ -1840,7 +1848,7 @@ def run1():
     l_publisher.publish(vel_msg_l) if not STOP else l_publisher.publish(stop_msg)
 
     # initiate the control class
-    control = RobotControl(fps, vel_msg_l, zs_desired)
+    control = RobotControl(fps, vel_msg_l, ZS_DESIRED)
 
     # get the follower velocities calling the desired control algo
     # ffs indicate that the two followers can see each other
@@ -1859,8 +1867,7 @@ def run1():
     rate_limiter.sleep()
 
 def run2():
-  global zs_desired
-  global speed_coefficient
+  global SPEED_COEFFICIENT
 
   rospy.init_node('robot_controller')
   rate_limiter = rospy.Rate(ROSPY_RATE)
@@ -1898,8 +1905,8 @@ def run2():
     # print('measurments', leader_laser.measurements)
     # u, w = rule_based(*leader_laser.measurements)
     u, w = obstacle_avoidance.braitenberg(*leader_laser.measurements)
-    u *= speed_coefficient * 0.25
-    w *= speed_coefficient * 0.25
+    u *= SPEED_COEFFICIENT * 0.25
+    w *= SPEED_COEFFICIENT * 0.25
     print('vels', u, w)
     vel_msg_l = Twist()
     vel_msg_l.linear.x = np.clip(u, -max_speed, max_speed)
@@ -1910,37 +1917,36 @@ def run2():
     # print("LEADER: FINDING ROBOTS")
     l_res = leader_laser.cluster_environment()
     lrs = l_res[LIDAR_ROBOTS]
-    lobs = l_res[LIDAR_OBSTACLES]
-    lall = l_res[LIDAR_ALL]
-    # print()
-    # print("FOLLOWER1: FINDING ROBOTS")
+    l_legs = l_res[LIDAR_LEGS]
+
+    print("LEGS")
+    for leg in l_legs:
+      print("\t", leg[0], '...', leg[len(leg) - 1])
+    print()
+
+
     f1_res = follower_lasers[0].cluster_environment()
     f1rs = f1_res[LIDAR_ROBOTS]
-    f1obs = f1_res[LIDAR_OBSTACLES]
-    f1all = f1_res[LIDAR_ALL]
-    # print()
-    # print("FOLLOWER2: FINDING ROBOTS")
+
     f2_res = follower_lasers[1].cluster_environment()
     f2rs = f2_res[LIDAR_ROBOTS]
-    f2obs = f2_res[LIDAR_OBSTACLES]
-    f2all = f2_res[LIDAR_ALL]
 
     # print()
-    print("ROBOTS FROM LEADER PERSPECTIVE:", lrs)
-    print("ROBOTS FROM FOLLOWER1 PERSPECTIVE:", f1rs)
-    print("ROBOTS FROM FOLLOWER2 PERSPECTIVE:", f2rs)
+    # print("ROBOTS FROM LEADER PERSPECTIVE:", lrs)
+    # print("ROBOTS FROM FOLLOWER1 PERSPECTIVE:", f1rs)
+    # print("ROBOTS FROM FOLLOWER2 PERSPECTIVE:", f2rs)
 
     print()
 
     # if the robots can't see eachother (with the leader seeing at least one follower)
     if not (len(lrs) > 0 and ((len(f1rs) > 0 and len(f2rs) > 1) or (len(f2rs) > 0 and len(f1rs) > 1))):
-      speed_coefficient = np.abs(speed_coefficient) * 0.95
+      SPEED_COEFFICIENT = np.abs(SPEED_COEFFICIENT) * 0.95
       f_publishers[0].publish(stop_msg)
       f_publishers[1].publish(stop_msg)
       rate_limiter.sleep()
       continue
     else:
-      speed_coefficient = 1.
+      SPEED_COEFFICIENT = 1.
 
     # match the observed robots from the lidar to {leader, follower1, follower2}
     matcher = ThreeRobotMatcher(lrs, f1rs, f2rs)
@@ -1956,7 +1962,7 @@ def run2():
       continue
 
     # initiate the control class
-    control = RobotControl(fps, vel_msg_l, zs_desired)
+    control = RobotControl(fps, vel_msg_l, ZS_DESIRED)
 
     # get the follower velocities calling the desired control algo
 
@@ -1974,8 +1980,7 @@ def run2():
     rate_limiter.sleep()
 
 def run3():
-  global zs_desired
-  global speed_coefficient
+  global SPEED_COEFFICIENT
 
   rospy.init_node('robot_controller')
   rate_limiter = rospy.Rate(ROSPY_RATE)
@@ -2020,8 +2025,8 @@ def run3():
     # print('measurments', leader_laser.measurements)
     # u, w = rule_based(*leader_laser.measurements)
     u, w = obstacle_avoidance.braitenberg(*leader_laser.measurements)
-    u *= speed_coefficient * 0.25
-    w *= speed_coefficient * 0.25
+    u *= SPEED_COEFFICIENT * 0.25
+    w *= SPEED_COEFFICIENT * 0.25
     print('vels', u, w)
     vel_msg_l = Twist()
     vel_msg_l.linear.x = np.clip(u, -max_speed, max_speed)
@@ -2049,21 +2054,21 @@ def run3():
     f2all = f2_res[LIDAR_ALL]
 
     # print()
-    print("ROBOTS FROM LEADER PERSPECTIVE:", lrs)
-    print("ROBOTS FROM FOLLOWER1 PERSPECTIVE:", f1rs)
-    print("ROBOTS FROM FOLLOWER2 PERSPECTIVE:", f2rs)
+    # print("ROBOTS FROM LEADER PERSPECTIVE:", lrs)
+    # print("ROBOTS FROM FOLLOWER1 PERSPECTIVE:", f1rs)
+    # print("ROBOTS FROM FOLLOWER2 PERSPECTIVE:", f2rs)
 
     print()
 
     # if the robots can't see eachother (with the leader seeing at least one follower)
     if not (len(lrs) > 0 and ((len(f1rs) > 0 and len(f2rs) > 1) or (len(f2rs) > 0 and len(f1rs) > 1))):
-      speed_coefficient = np.abs(speed_coefficient) * 0.95
+      SPEED_COEFFICIENT = np.abs(SPEED_COEFFICIENT) * 0.95
       f_publishers[0].publish(stop_msg)
       f_publishers[1].publish(stop_msg)
       rate_limiter.sleep()
       continue
     else:
-      speed_coefficient = 1.
+      SPEED_COEFFICIENT = 1.
 
     # match the observed robots from the lidar to {leader, follower1, follower2}
     matcher = ThreeRobotMatcher(lrs, f1rs, f2rs)
@@ -2081,7 +2086,7 @@ def run3():
       continue
 
     # initiate the control class
-    control = RobotControl(fps, vel_msg_l, zs_desired)
+    control = RobotControl(fps, vel_msg_l, ZS_DESIRED)
 
     # get the follower velocities calling the desired control algo
 
