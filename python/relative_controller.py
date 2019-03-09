@@ -48,6 +48,7 @@ ROBOT_WIDTH = 0.16
 LIDAR_RADIUS = 0.035
 EPSILON = .1
 
+
 ROSPY_RATE = 50
 
 X = 0
@@ -81,6 +82,7 @@ CIRCLE_ANGLE_MEAN_MAX = 1.6
 CIRCLE_ANGLE_STD = 0.15
 LEG_RADIUS = 0.07
 LEG_FUZZ = 0.025
+LEG_EPSILON = 0.1
 
 # Potential field scaling velocities
 SCALE_POTENTIAL_FORWARD = 0.88
@@ -460,7 +462,7 @@ class LegDetector(object):
 
     return leg
 
-  def find_leg(self, fps, ffs):
+  def find_leg(self, fps, ffs, lrs_legs):
 
     # fps - follower to leader positions
     # ffs - follower to follower pos tions
@@ -492,7 +494,23 @@ class LegDetector(object):
 
       # print("PRED ADDED")
 
-      preds.append(pred)
+      
+      close_enough = False
+      for leg_boundary in lrs_legs:
+          min_r, min_theta = (1e9, 1e9)
+          for r, theta in leg_boundary:
+            if r < min_r:
+              min_r = r
+              min_theta = theta
+          
+          min_pos = np.array([(min_r + LEG_RADIUS) * np.cos(min_theta),
+                              (min_r + LEG_RADIUS) * np.sin(min_theta)])
+
+          if vector_length(min_pos-pos) < LEG_EPSILON:
+            close_enough = True
+          
+      if close_enough:
+        preds.append(pred)
 
     leg = [None ,None]
 
@@ -1822,7 +1840,7 @@ def run1():
       continue
 
     # find the leg wrt the leader
-    leg_cart, leg_pol = leg_detector.find_leg(fps, ffs)
+    leg_cart, leg_pol = leg_detector.find_leg(fps, ffs, lrs_legs)
 
     print("LEG POLAR WRT LEADER", leg_pol)
 
