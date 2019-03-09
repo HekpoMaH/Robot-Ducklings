@@ -102,7 +102,7 @@ HUMAN_MIN = 1.0
 HUMAN_MAX = 3.5
 HUMAN_CONE = np.pi
 MIN_SEPARATION_DIST = 0.2
-USE_LEG_DETECTOR = False
+USE_LEG_DETECTOR = True
 
 # ThreeRobotMatcher
 MAX_RR_DIFF = 0.15
@@ -489,8 +489,8 @@ class LegDetector(object):
     if self._last_legs[0] is None and self._last_legs[1] is None:
       return leg 
     # leg=B + (B-A)
-    leg[0] = 2 * self._last_legs[self._last_leg_cnt % self._last_leg_sz] - self._last_legs[
-      (self._last_leg_sz + self._last_leg_cnt - 1) % self._last_leg_sz]
+    leg[0] = 2 * np.array(self._last_legs[self._last_leg_cnt % self._last_leg_sz]) - np.array(self._last_legs[
+      (self._last_leg_sz + self._last_leg_cnt - 1) % self._last_leg_sz])
     leg[1] = ThreeRobotMatcher.cart2pol(*leg[0])
 
     return leg
@@ -511,7 +511,7 @@ class LegDetector(object):
     # return both cart and polar
     #copy predictions in case it gets rewritten during evalution of this func
     if USE_LEG_DETECTOR == False:
-      unfiltered_preds = lrs_legs
+      unfiltered_preds = [ThreeRobotMatcher.pol2cart(*leg) for leg in lrs_legs]
     else:
       unfiltered_preds = [(p.pos.x, p.pos.y) for p in list(self._predictions)]
     preds = []
