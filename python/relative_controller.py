@@ -74,7 +74,7 @@ HUMAN_MAX = 3.5
 HUMAN_CONE = np.pi
 MIN_SEPARATION_DIST = 0.2
 
-STOP = True
+STOP = False
 
 class SimpleLaser(object):
   def __init__(self, robot_name, braitenberg = False):
@@ -950,7 +950,21 @@ class RobotControl(object):
 
       # this gets the angle between the bearing of the leader and follower (from frame of follower)
       beta = np.pi + fl[1] - lf[1]
+      b1 = -np.pi + lf[1] - fl[1]
+      b2 = lf[1] - fl[1]
+      b3 = fl[1] - lf[1]
+      b4 = np.pi - lf[1] - fl[1]
+      b5 = 2*np.pi - beta
+      print("BETA", beta)
+      print("B1", b1)
+      print("B2", b2)
+      print("B3", b3)
+      print("B4",b4)
+      print("B5", 2*np.pi - beta)
+      beta = b5
+
       gamma = beta + z[1]
+      gamma = beta - z[1]
 
       # print("z[0] l_12", z[0])
       # print("z[1] psi_ij", z[1])
@@ -1430,8 +1444,8 @@ class GoalFollower(object):
     return u, w
 
 
-zs_desired = {FOLLOWERS[0]: np.array([0.3, 7.*np.math.pi/8.]),
-              FOLLOWERS[1]: np.array([0.8, 9.*np.math.pi/8.])}
+zs_desired = {FOLLOWERS[0]: np.array([0.3, 5.*np.math.pi/8.]),
+              FOLLOWERS[1]: np.array([0.8, 10.*np.math.pi/8.])}
 # right triangle, two sides 0.4
 #                  l12,  psi12          , l13,   l23
 # zs_both_desired = [zs_desired[FOLLOWERS[0]], zs_desired[FOLLOWERS[1]]]
@@ -1854,7 +1868,7 @@ def run2():
 
     # ffs indicate that the two followers can see each other
     if ffs is not None:
-      velocities = control.three_robot(max_speed, max_angular, ffs)
+      velocities = control.basic(max_speed, max_angular)
       # velocities = control.basic(max_speed, max_angular)
     else:
       velocities = control.basic(max_speed, max_angular)
@@ -1865,4 +1879,4 @@ def run2():
     rate_limiter.sleep()
 
 if __name__ == '__main__':
-  run1()
+  run2()
