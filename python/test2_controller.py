@@ -244,18 +244,18 @@ class GoalPose(object):
     return self._position
 
 
-zs_desired = {FOLLOWERS[0]: [0.04, np.math.pi],
+ZS_DESIRED = {FOLLOWERS[0]: [0.04, np.math.pi],
               FOLLOWERS[1]: [0.06, np.math.pi]}
 
 
 def set_distance_and_bearing(robot_name, dist, bearing):
   """ Bearing is always within [0; 2pi], not [-pi;pi] """
-  global zs_desired
+  global ZS_DESIRED
   zs_desired[robot_name] = [dist, bearing]
 
 
 def run():
-  global zs_desired
+  global ZS_DESIRED
   rospy.init_node('robot_controller')
 
   l_publisher = rospy.Publisher('/' + LEADER + '/cmd_vel', Twist, queue_size=5)

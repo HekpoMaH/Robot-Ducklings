@@ -411,7 +411,7 @@ def get_path(final_node):
   return zip(points_x, points_y)
 
 
-zs_desired = {FOLLOWERS[0]: [0.5, np.math.pi],
+ZS_DESIRED = {FOLLOWERS[0]: [0.5, np.math.pi],
               FOLLOWERS[1]: [1.0, np.math.pi]}
 
 # right triangle, two sides 0.4
@@ -423,12 +423,12 @@ extra_psis = [3. * np.math.pi / 4., np.math.pi / 2.]
 
 def set_distance_and_bearing(robot_name, dist, bearing):
   """ Bearing is always within [0; 2pi], not [-pi;pi] """
-  global zs_desired
+  global ZS_DESIRED
   zs_desired[robot_name] = [dist, bearing]
 
 
 def run():
-  global zs_desired
+  global ZS_DESIRED
   rospy.init_node('three_robot_controller')
 
   path_publisher = rospy.Publisher('/path', Path, queue_size=1)

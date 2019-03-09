@@ -194,7 +194,7 @@ class GoalPose(object):
   def position(self):
     return self._position
 
-zs_desired = {FOLLOWERS[0]: [0.4, 3.*np.math.pi/4.],
+ZS_DESIRED = {FOLLOWERS[0]: [0.4, 3. * np.math.pi / 4.],
               FOLLOWERS[1]: [0.4, 5.*np.math.pi/4.]}
 
 z_obstacle_desired = {FOLLOWERS[0]: [0.8, 0.30],
@@ -202,7 +202,7 @@ z_obstacle_desired = {FOLLOWERS[0]: [0.8, 0.30],
 
 def set_distance_and_bearing(robot_name, dist, bearing):
     """ Bearing is always within [0; 2pi], not [-pi;pi] """
-    global zs_desired
+    global ZS_DESIRED
     zs_desired[robot_name] = [dist, bearing]
 
 
@@ -276,7 +276,7 @@ max_speed = 0.28
 max_angular = 0.28
 
 def set_vel_no_obstacle(follower, follower_pose, leader_pose, speed_leader):
-    global zs_desired, d, k, max_speed, max_angular
+    global ZS_DESIRED, d, k, max_speed, max_angular
 
 
     z = np.array([0., 0.])
@@ -304,7 +304,7 @@ def set_vel_no_obstacle(follower, follower_pose, leader_pose, speed_leader):
     return speed_follower
 
 def set_vel_with_obstacle(follower, follower_pose, leader_pose, speed_leader, virtual_pose, delta):
-    global zs_desired, d, max_speed, max_angular
+    global ZS_DESIRED, d, max_speed, max_angular
     k = [0.045, 0.4]
 
     z = np.array([0., 0.])
@@ -339,7 +339,7 @@ def set_vel_with_obstacle(follower, follower_pose, leader_pose, speed_leader, vi
     return speed_follower
 
 def run():
-    global zs_desired, d, k
+    global ZS_DESIRED, d, k
     rospy.init_node('robot_controller')
 
     l_publisher = rospy.Publisher('/' + LEADER + '/cmd_vel', Twist, queue_size=5)
