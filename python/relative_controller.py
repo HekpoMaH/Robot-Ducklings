@@ -65,8 +65,11 @@ FOLLOWER_2 = 'tb3_2'
 F1_INDEX = 0
 F2_INDEX = 1
 
-ZS_DESIRED = {FOLLOWERS[0]: np.array([0.3, 7. * np.math.pi / 8.]),
-              FOLLOWERS[1]: np.array([0.8, 9.*np.math.pi/8.])}
+# ZS_DESIRED = {FOLLOWERS[0]: np.array([0.3, 7. * np.math.pi / 8.]),
+#               FOLLOWERS[1]: np.array([0.8, 9.*np.math.pi/8.])}
+
+ZS_DESIRED = {FOLLOWERS[0]: np.array([0.5, 7. * np.math.pi / 8.]),
+              FOLLOWERS[1]: np.array([0.5, 9.*np.math.pi/8.])}
 
 SPEED_COEFFICIENT = 1.
 
@@ -376,10 +379,10 @@ class SimpleLaser(object):
 
           leg_pol = min(cl_k, key=lambda x: x[0])
           leg_cart = ThreeRobotMatcher.pol2cart(*leg_pol)
-
-          print("POSSIBLE LEG AT R", center_d + LEG_RADIUS, " THETA", min(cl_k, key = lambda x: x[0])[1])
-          print("or Cartesian", leg_cart)
-          print("A SPAN", a_span)
+          #
+          # print("POSSIBLE LEG AT R", center_d + LEG_RADIUS, " THETA", min(cl_k, key = lambda x: x[0])[1])
+          # print("or Cartesian", leg_cart)
+          # print("A SPAN", a_span)
 
 
         # this code predicts the legs in the scene
@@ -388,15 +391,13 @@ class SimpleLaser(object):
         e_span_leg_p = 2 * self.boundary_circ_angle(center_d + LEG_RADIUS + LEG_FUZZ,
                                                   LEG_RADIUS + LEG_FUZZ)
 
-        if self._robot_name == LEADER:
-          print("E SPAN LEG", e_span_leg)
-          print("E SPAN LEG +", e_span_leg_p)
+        # if self._robot_name == LEADER:
+        #   print("E SPAN LEG", e_span_leg)
+        #   print("E SPAN LEG +", e_span_leg_p)
 
         if a_span > e_span_leg and a_span < e_span_leg_p:
-          print("FOUND LEG")
+          # print("FOUND LEG")
           legs.append(cl_k)
-        else:
-          print("NOT FOUND LEG")
 
         continue
       # else:
