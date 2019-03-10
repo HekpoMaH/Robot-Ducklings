@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 
 from __future__ import absolute_import
 from __future__ import division
@@ -25,12 +25,12 @@ from nav_msgs.msg import Path
 from tf.transformations import euler_from_quaternion
 
 # Import the potential_field.py code rather than copy-pasting.
-directory = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../python')
-sys.path.insert(0, directory)
-try:
-  import rrt
-except ImportError:
-  raise ImportError('Unable to import potential_field.py. Make sure this file is in "{}"'.format(directory))
+# directory = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../python')
+# sys.path.insert(0, directory)
+# try:
+import rrt_improved as rrt
+# except ImportError:
+#   raise ImportError('Unable to import potential_field.py. Make sure this file is in "{}"'.format(directory))
 
 SPEED = .2
 EPSILON = .1
@@ -161,7 +161,7 @@ def get_velocity(position, path_points):
 
 class SLAM(object):
   def __init__(self):
-    rospy.Subscriber('/map', OccupancyGrid, self.callback)
+    rospy.Subscriber('/turtlebot03/map', OccupancyGrid, self.callback)
     self._tf = TransformListener()
     self._occupancy_grid = None
     self._pose = np.array([np.nan, np.nan, np.nan], dtype=np.float32)
@@ -180,7 +180,7 @@ class SLAM(object):
   def update(self):
     # Get pose w.r.t. map.
     a = 'occupancy_grid'
-    b = 'base_link'
+    b = 'turtlebot03/base_link'
     if self._tf.frameExists(a) and self._tf.frameExists(b):
       try:
         t = rospy.Time(0)
@@ -272,7 +272,13 @@ def run(args):
 
   # Update control every 100 ms.
   rate_limiter = rospy.Rate(100)
-  publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=5)
+  publisher = rospy.Publisher('/turtlebot03/cmd_vel', Twist, queue_size=5)
+  while True:
+      l_publisher = rospy.Publisher('/turtlebot03/cmd_vel', Twist, queue_size=5)
+      vel_msg_l = Twist()
+      vel_msg_l.linear.x = .5
+      l_publisher.publish(vel_msg_l)
+      rate_limiter.sleep()
   path_publisher = rospy.Publisher('/path', Path, queue_size=1)
   slam = SLAM()
   goal = GoalPose()
