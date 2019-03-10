@@ -1046,7 +1046,6 @@ class ThreeRobotMatcher(object):
     return diff_set
 
 
-
 class RobotControl(object):
 
   def __init__(self, followers, leader_vel, desired_pose):
@@ -1579,6 +1578,7 @@ class GoalFollower(object):
 
     return u, w
 
+
 def run():
   global ZS_DESIRED
   global SPEED_COEFFICIENT
@@ -1775,6 +1775,7 @@ def run():
 
     rate_limiter.sleep()
 
+
 def run1():
   # global ZS_DESIRED
   # global SPEED_COEFFICIENT
@@ -1929,6 +1930,7 @@ def run1():
 
     rate_limiter.sleep()
 
+
 def run2():
   global SPEED_COEFFICIENT
 
@@ -2050,6 +2052,7 @@ def run2():
       f_publisher.publish(velocities[i]) if not STOP else f_publisher.publish(stop_msg)
 
     rate_limiter.sleep()
+
 
 def run3():
   global SPEED_COEFFICIENT
