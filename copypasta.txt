@@ -1,0 +1,10 @@
+192.168.2.219
+export ROS_MASTER_URI=http://192.168.2.219:11311
+export ROS_HOSTNAME=192.168.2.219
+
+export ROBOT_IP=192.168.2.150
+export ROS_NAMESPACE=
+
+multi_robot_name
+
+roslaunch turtlebot3_bringup turtlebot3_robot.launch multi_robot_name:=tb3_2 set_lidar_frame_id:=tb3_2/base_scan
