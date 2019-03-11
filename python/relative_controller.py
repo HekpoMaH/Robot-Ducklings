@@ -93,9 +93,9 @@ LEG_RADIUS = 0.075
 LEG_FUZZ = 0.04
 
 # Potential field scaling velocities
-SCALE_POTENTIAL_FORWARD = 0.88
-SCALE_POTENTIAL_ROTATIONAL = 0.56
-POTENTIAL_FIELD_FORCE = 0.005
+SCALE_POTENTIAL_FORWARD = 0.70
+SCALE_POTENTIAL_ROTATIONAL = 0.40
+POTENTIAL_FIELD_FORCE = 0.050
 
 # LegDetector
 HUMAN_MIN = 1.0
@@ -116,8 +116,8 @@ BASIC_K = np.array([0.45, 0.24])
 # run
 GOAL_FROM_LEG = 0.20
 GOAL_ZONE_RADIUS = 0.05
-MAX_SPEED = 0.1*10
-MAX_ANGULAR = 0.1*10
+MAX_SPEED = 0.1
+MAX_ANGULAR = 0.1
 
 STOP = False
 
@@ -1780,6 +1780,8 @@ def run():
 
 def run1():
   # global ZS_DESIRED
+  max_speed = 0.06
+  max_angular = 0.06
   global SPEED_COEFFICIENT
 
   rospy.init_node('robot_controller')
@@ -1912,7 +1914,7 @@ def run1():
       vel_msg_l = gf.get_velocity(slam.occupancy_grid)
 
     print('some string', vel_msg_l, STOP)
-    vel_msg_l.linear.x = .5
+    # vel_msg_l.linear.x = .5
     l_publisher.publish(vel_msg_l) if not STOP else l_publisher.publish(stop_msg)
 
     # initiate the control class
