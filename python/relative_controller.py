@@ -116,8 +116,8 @@ BASIC_K = np.array([0.45, 0.24])
 # run
 GOAL_FROM_LEG = 0.20
 GOAL_ZONE_RADIUS = 0.05
-MAX_SPEED = 0.1
-MAX_ANGULAR = 0.1
+MAX_SPEED = 0.1*10
+MAX_ANGULAR = 0.1*10
 
 STOP = False
 
@@ -486,9 +486,11 @@ class LegDetector(object):
     if abs(self._start_of_predict - rospy.Time.now().to_sec()) > 10.:
         return leg
     print('last legs', self._last_legs)
-    if self._last_legs[0] is None and self._last_legs[1] is None:
+    if self._last_legs[0] is None or self._last_legs[1] is None:
       return leg 
     # leg=B + (B-A)
+    print(self._last_legs, np.array(self._last_legs[self._last_leg_cnt % self._last_leg_sz]), np.array(self._last_legs[
+      (self._last_leg_sz + self._last_leg_cnt - 1) % self._last_leg_sz]))
     leg[0] = 2 * np.array(self._last_legs[self._last_leg_cnt % self._last_leg_sz]) - np.array(self._last_legs[
       (self._last_leg_sz + self._last_leg_cnt - 1) % self._last_leg_sz])
     leg[1] = ThreeRobotMatcher.cart2pol(*leg[0])
@@ -1778,7 +1780,7 @@ def run():
 
 def run1():
   # global ZS_DESIRED
-  # global SPEED_COEFFICIENT
+  global SPEED_COEFFICIENT
 
   rospy.init_node('robot_controller')
   rate_limiter = rospy.Rate(ROSPY_RATE)
@@ -1909,6 +1911,8 @@ def run1():
       gf = GoalFollower(goal_slam, leader_pose)
       vel_msg_l = gf.get_velocity(slam.occupancy_grid)
 
+    print('some string', vel_msg_l, STOP)
+    vel_msg_l.linear.x = .5
     l_publisher.publish(vel_msg_l) if not STOP else l_publisher.publish(stop_msg)
 
     # initiate the control class

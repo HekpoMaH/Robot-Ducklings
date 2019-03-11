@@ -99,9 +99,9 @@ def main(args):
   plt.show()
   colors = colors_from('jet', len(args.dt))
 
-  zs_desired = [[0.4, np.math.pi*3/4],
-               [0.6, np.math.pi],
-               [0.4, np.math.pi*5/4]]
+  zs_desired = [[0.8, np.math.pi*3/3],
+               #[0.6, np.math.pi],
+               [0.4, np.math.pi*4/4]]
 
   # hardcoded? TODO
   d=0.05
@@ -112,15 +112,15 @@ def main(args):
 
     # Initial robot pose (x, y and theta).
     robot_pose = np.array([0., 0., 0.], dtype=np.float32)
-    follower_poses = np.array([[1, -1, np.math.pi/2],
-                              [1, 1, 0],
+    follower_poses = np.array([[-1, 1, np.math.pi/2],
+                              #[1, 1, 0],
                               [-1, -1, -np.math.pi/2]])
     follower_drawers = []
     for i, t in enumerate(zip(follower_poses, colors_from('jet', len(follower_poses)+1)[1:])):
         follower, c = t
         follower_drawers.append(RobotDrawer(ax, follower, color=c, label='follower'+str(i)))
 
-    robot_drawer = RobotDrawer(ax, robot_pose, color=color, label='dt = %.3f [s]' % dt)
+    robot_drawer = RobotDrawer(ax, robot_pose, color=color, label='leader')
     if args.animate:
       fig.canvas.draw()
       fig.canvas.flush_events()
